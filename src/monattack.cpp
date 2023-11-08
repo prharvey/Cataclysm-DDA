@@ -3672,7 +3672,7 @@ void mattack::flame( monster *z, Creature *target )
         // friendly
         // It takes a while
         z->moves -= 500;
-        if( !here.sees( z->pos(), target->pos(), dist ) ) {
+        if( !here.sees( *z, *target, dist ) ) {
             // shouldn't happen
             debugmsg( "mattack::flame invoked on invisible target" );
         }
@@ -3695,7 +3695,7 @@ void mattack::flame( monster *z, Creature *target )
 
     // It takes a while
     z->moves -= 500;
-    if( !here.sees( z->pos(), target->pos(), dist + 1 ) ) {
+    if( !here.sees( *z, *target, dist + 1 ) ) {
         // shouldn't happen
         debugmsg( "mattack::flame invoked on invisible target" );
     }

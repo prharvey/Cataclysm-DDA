@@ -46,6 +46,7 @@
 #include "field.h"
 #include "field_type.h"
 #include "flag.h"
+#include "flood_fill.h"
 #include "fragment_cloud.h"
 #include "fungal_effects.h"
 #include "game.h"
@@ -9916,11 +9917,11 @@ std::list<tripoint> map::find_furnitures_with_flag_in_radius( const tripoint &ce
     return furn_locs;
 }
 
-std::list<Creature *> map::get_creatures_in_radius( const tripoint &center, size_t radius,
+std::vector<Creature *> map::get_creatures_in_radius( const tripoint &center, size_t radius,
         size_t radiusz ) const
 {
     creature_tracker &creatures = get_creature_tracker();
-    std::list<Creature *> creature_list;
+    std::vector<Creature *> creature_list;
     for( const tripoint &loc : points_in_radius( center, radius, radiusz ) ) {
         Creature *tmp_critter = creatures.creature_at( loc );
         if( tmp_critter != nullptr ) {
@@ -10269,5 +10270,77 @@ tripoint drawsq_params::center() const
         return player_character.pos() + player_character.view_offset;
     } else {
         return view_center;
+    }
+}
+
+/** This is lazily evaluated on demand. Each creature in a zone is visited
+ * as it flood fills, then the zone number is incremented. At the end all creatures in
+ * the same zone will have the same zone number assigned, which can be used to have creatures in
+ * different zones ignore each other very cheaply.
+ */
+void map::flood_fill_zone(const Creature& origin)
+{
+    static int zone_number = 1;
+    if (get_visitable_zones_cache_dirty()) {
+        set_visitable_zones_cache_dirty(false);
+        zone_number = 1;
+    }
+    // This check insures we only flood fill when the target monster has an uninitialized zone.
+    if (zone_by_creature.count(&origin) == 1) {
+        return;
+    }
+    creature_tracker& tracker = get_creature_tracker();
+
+    ff::flood_fill_visit_10_connected(origin.pos_bub(),
+        [this](const tripoint_bub_ms& loc, int direction) {
+            if (direction == 0) {
+                return inbounds(loc) && (is_transparent_wo_fields(loc.raw()) ||
+                    passable(loc));
+            }
+            if (direction == 1) {
+                const maptile& up = maptile_at(loc);
+                const ter_t& up_ter = up.get_ter_t();
+                if (up_ter.id.is_null()) {
+                    return false;
+                }
+                if (((up_ter.movecost != 0 && up.get_furn_t().movecost >= 0) ||
+                    is_transparent_wo_fields(loc.raw())) &&
+                    (up_ter.has_flag(ter_furn_flag::TFLAG_NO_FLOOR) ||
+                        up_ter.has_flag(ter_furn_flag::TFLAG_GOES_DOWN))) {
+                    return true;
+                }
+            }
+            if (direction == -1) {
+                const maptile& up = maptile_at(loc + tripoint_above);
+                const ter_t& up_ter = up.get_ter_t();
+                if (up_ter.id.is_null()) {
+                    return false;
+                }
+                const maptile& down = maptile_at(loc);
+                const ter_t& down_ter = up.get_ter_t();
+                if (down_ter.id.is_null()) {
+                    return false;
+                }
+                if (((down_ter.movecost != 0 && down.get_furn_t().movecost >= 0) ||
+                    is_transparent_wo_fields(loc.raw())) &&
+                    (up_ter.has_flag(ter_furn_flag::TFLAG_NO_FLOOR) ||
+                        up_ter.has_flag(ter_furn_flag::TFLAG_GOES_DOWN))) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        [&tracker, this](const tripoint_bub_ms& loc) {
+            Creature* creature = tracker.creature_at<Creature>(loc);
+            if (creature) {
+                creatures_by_zone[zone_number].push_back(creature);
+                zone_by_creature[creature] = zone_number;
+            }
+        });
+    if (zone_number == std::numeric_limits<int>::max()) {
+        zone_number = 1;
+    }
+    else {
+        zone_number++;
     }
 }

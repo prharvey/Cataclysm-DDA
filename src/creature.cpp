@@ -168,7 +168,9 @@ Creature::Creature( Creature && ) noexcept( map_is_noexcept &&list_is_noexcept )
 Creature &Creature::operator=( const Creature & ) = default;
 Creature &Creature::operator=( Creature && ) noexcept = default;
 
-Creature::~Creature() = default;
+Creature::~Creature() {
+    get_map().remove_creature_from_reachability(this);
+}
 
 tripoint Creature::pos() const
 {
@@ -359,6 +361,10 @@ bool Creature::sees( const Creature &critter ) const
 
     map &here = get_map();
 
+    if (!here.is_possible_to_see(*this, critter)) {
+        return false;
+    }
+
     if( critter.has_flag( mon_flag_ALWAYS_VISIBLE ) || ( has_flag( mon_flag_ALWAYS_SEES_YOU ) &&
             critter.is_avatar() ) ) {
         return true;
@@ -399,7 +405,7 @@ bool Creature::sees( const Creature &critter ) const
 
     // Can always see adjacent monsters on the same level.
     // We also bypass lighting for vertically adjacent monsters, but still check for floors.
-    if( wanted_range <= 1 && ( posz() == critter.posz() || here.sees( pos(), critter.pos(), 1 ) ) ) {
+    if( wanted_range <= 1 && ( posz() == critter.posz() || here.sees( *this, critter, 1 ) ) ) {
         return visible( ch );
     } else if( ( wanted_range > 1 && critter.digging() &&
                  here.has_flag( ter_furn_flag::TFLAG_DIGGABLE, critter.pos() ) ) ||

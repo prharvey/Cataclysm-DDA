@@ -351,6 +351,11 @@ class map
         void set_floor_cache_dirty( int zlev );
         void set_pathfinding_cache_dirty( int zlev );
         void set_visitable_zones_cache_dirty( bool dirty = true ) {
+            if (dirty) {
+                creatures_by_zone.clear();
+                zone_by_creature.clear();
+                to_remove.clear();
+            }
             visitable_cache_dirty = dirty;
         };
         bool get_visitable_zones_cache_dirty() const {
@@ -659,10 +664,10 @@ class map
         // TODO: fix point types (remove the first overload)
         std::vector<tripoint> route( const tripoint &f, const tripoint &t,
                                      const pathfinding_settings &settings,
-        const std::set<tripoint> &pre_closed = {{ }} ) const;
+        const std::unordered_set<tripoint> &pre_closed = {{ }} ) const;
         std::vector<tripoint_bub_ms> route( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
                                             const pathfinding_settings &settings,
-        const std::set<tripoint> &pre_closed = {{ }} ) const;
+        const std::unordered_set<tripoint> &pre_closed = {{ }} ) const;
 
         // Vehicles: Common to 2D and 3D
         VehicleList get_vehicles();
@@ -2236,14 +2241,50 @@ class map
         bool _main_requires_cleanup = false;
         std::optional<bool> _main_cleanup_override = std::nullopt;
 
-        // Tracks the dirtiness of the visitable zones cache, but that cache does not live here,
-        // it is distributed among the active monsters. This must be flipped when
+        // Tracks the dirtiness of the visitable zones cache. This must be flipped when
         // persistent visibility from terrain or furniture changes
         // (this excludes vehicles and fields) or when persistent traversability changes,
         // which means walls and floors.
         bool visitable_cache_dirty = false;
+        std::unordered_map<int, std::vector<Creature*>> creatures_by_zone;
+        std::unordered_map<const Creature*, int> zone_by_creature;
+        std::unordered_set<Creature*> to_remove;
+
+        void flood_fill_zone(const Creature& origin);
 
     public:
+        // Only call from the Creature destructor.
+        void remove_creature_from_reachability(Creature* creature) {
+            to_remove.insert(creature);
+        }
+
+        template <typename Functor>
+        void visit_reachable_creatures(const Creature& origin, Functor f) {
+            flood_fill_zone(origin);
+            const auto map_iter = creatures_by_zone.find(zone_by_creature[&origin]);
+            if (map_iter != creatures_by_zone.end()) {
+                auto vector_iter = map_iter->second.begin();
+                const auto vector_end = map_iter->second.end();
+                for (; vector_iter != vector_end; ++vector_iter) {
+                    Creature* other = *vector_iter;
+                    if (to_remove.count(other) == 0) {
+                        f(*other);
+                    }
+                }
+            }
+        }
+
+        bool is_possible_to_see(const Creature& origin, const Creature& target) {
+            flood_fill_zone(origin);
+            flood_fill_zone(target);
+            // We don't need to check if either creature was removed, as we have valid references.
+            return zone_by_creature[&origin] == zone_by_creature[&origin];
+        }
+
+        bool sees(const Creature& origin, const Creature& target, int range) {
+            return is_possible_to_see(origin, target) && sees(origin.pos(), target.pos(), range);
+        }
+
         void queue_main_cleanup();
         bool is_main_cleanup_queued() const;
         void main_cleanup_override( bool over );
@@ -2296,7 +2337,7 @@ class map
                 ter_furn_flag flag,
                 size_t radiusz = 0 ) const;
         /**returns creatures in specified radius*/
-        std::list<Creature *> get_creatures_in_radius( const tripoint &center, size_t radius,
+        std::vector<Creature *> get_creatures_in_radius( const tripoint &center, size_t radius,
                 size_t radiusz = 0 ) const;
 
         level_cache &access_cache( int zlev );

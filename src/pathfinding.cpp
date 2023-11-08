@@ -135,40 +135,9 @@ static bool vertical_move_destination( const map &m, ter_furn_flag flag, tripoin
     return false;
 }
 
-template<class Set1, class Set2>
-static bool is_disjoint( const Set1 &set1, const Set2 &set2 )
-{
-    if( set1.empty() || set2.empty() ) {
-        return true;
-    }
-
-    typename Set1::const_iterator it1 = set1.begin();
-    typename Set1::const_iterator it1_end = set1.end();
-
-    typename Set2::const_iterator it2 = set2.begin();
-    typename Set2::const_iterator it2_end = set2.end();
-
-    if( *set2.rbegin() < *it1 || *set1.rbegin() < *it2 ) {
-        return true;
-    }
-
-    while( it1 != it1_end && it2 != it2_end ) {
-        if( *it1 == *it2 ) {
-            return false;
-        }
-        if( *it1 < *it2 ) {
-            it1++;
-        } else {
-            it2++;
-        }
-    }
-
-    return true;
-}
-
 std::vector<tripoint> map::route( const tripoint &f, const tripoint &t,
                                   const pathfinding_settings &settings,
-                                  const std::set<tripoint> &pre_closed ) const
+                                  const std::unordered_set<tripoint> &pre_closed ) const
 {
     /* TODO: If the origin or destination is out of bound, figure out the closest
      * in-bounds point and go to that, then to the real origin/destination.
@@ -194,9 +163,14 @@ std::vector<tripoint> map::route( const tripoint &f, const tripoint &t,
         if( std::all_of( line_path.begin(), line_path.end(), [&pf_cache]( const tripoint & p ) {
         return !( pf_cache.special[p.x][p.y] & non_normal );
         } ) ) {
-            const std::set<tripoint> sorted_line( line_path.begin(), line_path.end() );
-
-            if( is_disjoint( sorted_line, pre_closed ) ) {
+            bool is_disjoint = true;
+            for (auto iter = line_path.begin(); iter != line_path.end(); ++iter) {
+                if (pre_closed.count(*iter) == 1) {
+                    is_disjoint = false;
+                    break;
+                }
+            }
+            if( is_disjoint ) {
                 return line_path;
             }
         }
@@ -538,7 +512,7 @@ std::vector<tripoint> map::route( const tripoint &f, const tripoint &t,
 
 std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
         const pathfinding_settings &settings,
-        const std::set<tripoint> &pre_closed ) const
+        const std::unordered_set<tripoint> &pre_closed ) const
 {
     std::vector<tripoint> raw_result = route( f.raw(), t.raw(), settings, pre_closed );
     std::vector<tripoint_bub_ms> result;
