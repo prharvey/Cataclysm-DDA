@@ -6,6 +6,76 @@
 #include "game_constants.h"
 #include "mdarray.h"
 
+
+template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename ParentMap = std::unordered_map<State, State>>
+class AStarPathfinder
+{
+    public:
+        AStarPathfinder( VisitedSet visited = VisitedSet{}, ParentMap parents = ParentMap{} ) : visited_
+            ( visited ), parents_( parents ) {}
+
+        template <typename Neighbors, typename Heuristic>
+        std::vector<State> find_path( const State &start, const State &end, Neighbors neighbors_fn,
+                                      Heuristic heuristic_fn );
+
+    private:
+        VisitedSet visited_;
+        ParentMap parents_;
+};
+
+struct FirstElementGreaterThan {
+    template <typename T, typename... Ts>
+    bool operator()( const std::tuple<T, Ts...> &lhs, const std::tuple<T, Ts...> &rhs ) const {
+        return std::get<0>( lhs ) > std::get<0>( rhs );
+    }
+};
+
+template <typename State, typename Cost, typename VisitedSet, typename ParentMap>
+template <typename Neighbors, typename Heuristic>
+std::vector<State> AStarPathfinder<State, Cost, VisitedSet, ParentMap>::find_path(
+    const State &start, const State &end, Neighbors neighbors_fn, Heuristic heuristic_fn )
+{
+    using Node = std::tuple<Cost, Cost, State, State>;
+    std::priority_queue< Node, std::vector< Node>, FirstElementGreaterThan> frontier;
+    std::vector<State> result;
+
+    // The first parameter should be heuristic_fn(start), but it is immediately popped
+    // so there is no reason to waste the time.
+    frontier.emplace( 0, 0, from, from );
+    do {
+        const auto [_, current_cost, current_state, current_parent] = frontier.top();
+        frontier.pop();
+
+        if( visited_.count( current_state ) == 1 ) {
+            continue;
+        }
+
+        visited_.emplace( current_state );
+        parents_.emplace( current_state, current_parent );
+
+        if( current_state == end ) {
+            while( current_state != start ) {
+                result.push_back( current_state );
+                current_state = parents_[current_state];
+            }
+            std::reverse( result.begin(), result.end() );
+            break;
+        }
+
+        neighbors_fn( current_state, [&frontier, &heuristic_fn, &current_state, current_cost]( State &&
+        neighbour, Cost cost ) {
+            if( visited_.count( neighbour ) == 0 ) {
+                const Cost new_cost = current_cost + cost;
+                const Cost estimated_cost = heuristic_fn( neighbour ) + new_cost;
+                frontier.emplace( estimated_cost, new_cost, std::move( neighbour ), current_state );
+            }
+        } );
+
+    } while( !frontier.empty() );
+    visited_.clear();
+    return result;
+}
+
 enum pf_special : int {
     PF_NORMAL = 0x00,    // Plain boring tile (grass, dirt, floor etc.)
     PF_SLOW = 0x01,      // Tile with move cost >2
