@@ -27,6 +27,12 @@
 #include "vehicle.h"
 #include "vpart_position.h"
 
+RealityBubblePathfinder *RealityBubblePathfinder::global()
+{
+    static RealityBubblePathfinder *global = new RealityBubblePathfinder();
+    return global;
+}
+
 enum astar_state {
     ASL_NONE,
     ASL_OPEN,
