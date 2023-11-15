@@ -33,6 +33,16 @@ RealityBubblePathfinder *RealityBubblePathfinder::global()
     return global;
 }
 
+std::optional<int> CreaturePathfinder::move_cost(const tripoint_bub_ms& from, const tripoint_bub_ms& to) const {
+    
+}
+
+std::vector<tripoint_bub_ms> CreaturePathfinder::find_path(const tripoint_bub_ms& from, const tripoint_bub_ms& to) const {
+    return RealityBubblePathfinder::global()->find_path(from, to,
+        [this](const tripoint_bub_ms& from, const tripoint_bub_ms& to) { return this->move_cost(from, to); },
+        [to](const tripoint_bub_ms& from) { return 2 * rl_dist(from, to); });
+}
+
 enum astar_state {
     ASL_NONE,
     ASL_OPEN,

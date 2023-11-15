@@ -31,7 +31,7 @@ class RealityBubblePathfinder
         static RealityBubblePathfinder *global();
 
         template <typename CostFn, typename HeuristicFn>
-        std::vector<tripoint_bub_ms> find_path( const tripoint_bub_ms &start, const tripoint_bub_ms &end,
+        std::vector<tripoint_bub_ms> find_path( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
                                                 CostFn cost_fn, HeuristicFn heuristic_fn );
 
     private:
@@ -54,11 +54,92 @@ class RealityBubblePathfinder
 
         static constexpr tripoint_bub_ms get_tripoint( int index ) {
             constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
-            return tripoint_bub_ms( index / layer_size, index / MAPSIZE_X, index % MAPSIZE_X );
+            return tripoint_bub_ms( index / layer_size - OVERMAP_DEPTH, (index % layer_size) / MAPSIZE_X, index % MAPSIZE_X );
         }
 
         AStarPathfinder<int, int, IndexVisitedSet, IndexParentsMap> astar_;
 };
+
+enum class PathfindingFlag : uint32_t {
+    Normal = 1 << 0,       // Plain boring tile (grass, dirt, floor etc.)
+    ShallowWater = 1 << 1,         // Shallow water.
+    DeepWater = 1 << 2,         // Deep water.
+    Air = 1 << 3,         // Empty air
+    Wall = 1 << 4,         // Unpassable ter/furn/vehicle
+    Vehicle = 1 << 5,      // Any vehicle tile (passable or not)
+    DangerousField = 1 << 6,        // Dangerous field
+    DangerousTrap = 1 << 7,         // Dangerous trap (i.e. not flagged benign)
+    Vertical = 1 << 8,       // Stairs, ramp etc.
+    Climmable = 1 << 9,    // 0 move cost but can be climbed on examine
+    Sharp = 1 << 10,        // sharp items (barbed wire, etc)
+    Door = 1 << 11,        // A door (any kind)
+    InsideDoor = 1 << 12, // A door that can be opened from the inside only
+    LockedDoor = 1 << 13,        // A locked door
+    Outside = 1 << 14,       // Tile is not indoors.
+    Pit = 1 << 15, // A pit you can fall into / climb out of.
+};
+
+using PathfindingFlags = uint32_t;
+
+class RealityBubblePathfindingCache {
+public:
+    PathfindingFlags get_flags(const tripoint_bub_ms& p) const;
+
+    int move_cost(const tripoint_bub_ms& p) const;
+
+    const std::pair<int, int>& bash_range(const tripoint_bub_ms& p) const;
+
+private:
+    bool dirty = false;
+    cata::mdarray<PathfindingFlags, point_bub_ms> special;
+};
+
+struct CreaturePathfindingSettings {
+    int bash_strength = 0;
+    int max_dist = 0;
+    // At least 2 times the above, usually more
+    int max_length = 0;
+
+    // Expected terrain cost (2 is flat ground) of climbing a wire fence
+    // 0 means no climbing
+    int climb_cost = 0;
+
+    bool allow_open_doors = false;
+    bool allow_unlock_doors = false;
+    bool avoid_traps = false;
+    bool allow_climb_stairs = true;
+    bool avoid_rough_terrain = false;
+    bool avoid_sharp = false;
+
+    CreaturePathfindingSettings() = default;
+    CreaturePathfindingSettings(const CreaturePathfindingSettings&) = default;
+
+    CreaturePathfindingSettings(int bs, int md, int ml, int cc, bool aod, bool aud, bool at, bool acs,
+        bool art, bool as)
+        : bash_strength(bs), max_dist(md), max_length(ml), climb_cost(cc),
+        allow_open_doors(aod), allow_unlock_doors(aud), avoid_traps(at), allow_climb_stairs(acs),
+        avoid_rough_terrain(art), avoid_sharp(as) {}
+
+    CreaturePathfindingSettings& operator=(const CreaturePathfindingSettings&) = default;
+};
+
+class CreaturePathfinder {
+public:
+    // Check if it is possible to move between two adjacent points.
+    bool can_move(const tripoint_bub_ms& from, const tripoint_bub_ms& to) const;
+
+    // Find the cost of movement between two adjacent points.
+    // Returns std::nullopt if it isn't possible to move.
+    std::optional<int> move_cost(const tripoint_bub_ms& from, const tripoint_bub_ms& to) const;
+
+    std::vector<tripoint_bub_ms> find_path(const tripoint_bub_ms& from, const tripoint_bub_ms& to) const;
+
+private:
+    const CreaturePathfindingSettings* settings_;
+    RealityBubblePathfindingCache* cache_;
+};
+
+// Implementation Details
 
 struct FirstElementGreaterThan {
     template <typename T, typename... Ts>
@@ -142,11 +223,11 @@ inline int RealityBubblePathfinder::IndexParentsMap::operator[]( int child ) con
 }
 
 template <typename CostFn, typename HeuristicFn>
-std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const tripoint_bub_ms &start,
-        const tripoint_bub_ms &end, CostFn cost_fn, HeuristicFn heuristic_fn )
+std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const tripoint_bub_ms &from,
+        const tripoint_bub_ms &to, CostFn cost_fn, HeuristicFn heuristic_fn )
 {
-    const std::vector<int> index_path = astar_.find_path( get_index( start ),
-                                        get_index( end ), []( int index,
+    const std::vector<int> index_path = astar_.find_path( get_index(from),
+                                        get_index(to), []( int index,
     auto &&emit_fn ) {
         const tripoint_bub_ms current = get_tripoint( index );
         for( int x = std::max( current.x() - 1, 0 ); x < std::min( current.x() + 1, MAPSIZE_X ); ++x ) {
