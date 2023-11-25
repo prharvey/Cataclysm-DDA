@@ -983,6 +983,7 @@ everfrost
 eviscerations
 exactingly
 exchangeable
+exchanger
 excreta
 excretions
 exhorts
@@ -990,6 +991,7 @@ existentialists
 exobay
 exodii
 exoplanet
+exoplanetary
 exosuit
 exosuits
 expansionary
@@ -2477,6 +2479,7 @@ reclines
 recolherem
 recrafted
 recursively
+recuperator
 recurve
 recutita
 recycler
@@ -3146,6 +3149,7 @@ uncleaned
 uncluttered
 uncoiling
 uncoils
+uncontacted
 uncured
 undecipherable
 underbarrel
