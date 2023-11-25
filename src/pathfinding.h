@@ -374,13 +374,6 @@ class PathfindingSettings
             set( PathfindingFlag::HardGround, v );
         }
 
-        bool avoid_sunlight() const {
-            return avoid_sunlight_;
-        }
-        void set_avoid_sunlight( bool v = true ) {
-            avoid_sunlight_ = v;
-        }
-
         const std::function<bool( const field_type_id & )> &maybe_avoid_dangerous_fields_fn() const {
             return maybe_avoid_dangerous_fields_fn_;
         }
@@ -484,7 +477,6 @@ class PathfindingSettings
         RealityBubblePathfindingSettings rb_settings_;
 
         bool avoid_climbing_ = false;
-        bool avoid_sunlight_ = false;
         bool avoid_opening_doors_ = false;
         bool avoid_unlocking_doors_ = false;
         std::function<bool( const field_type_id & )> maybe_avoid_dangerous_fields_fn_;
@@ -514,14 +506,14 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet>::find_path(
     visited_.clear();
     history_.clear();
     history_.emplace_back( 0, from, 0 );
-    // The first parameter should be heuristic_fn(start), but it is immediately popped
+    // The first parameter is normally heuristic_fn(from), but it is immediately popped
     // so there is no reason to waste the time.
     frontier.emplace( 0, 0 );
     do {
         const auto [_, index] = frontier.top();
         frontier.pop();
 
-        const auto [current_cost, current_state, current_parent] = history_[index];
+        const auto [current_cost, current_state, _] = history_[index];
 
         if( visited_.count( current_state ) == 1 ) {
             continue;

@@ -297,8 +297,7 @@ int PathfindingSettings::bash_rating_from_range( int min, int max ) const
 namespace
 {
 
-std::optional<int> creature_move_cost_internal( const PathfindingSettings &settings,
-        const RealityBubblePathfindingCache &cache, const tripoint_bub_ms &from, const tripoint_bub_ms &to )
+std::optional<int> pathfinding_move_cost_internal( const map& here, const tripoint_bub_ms& from, const tripoint_bub_ms& to, const PathfindingSettings &settings, const RealityBubblePathfindingCache &cache)
 {
     const PathfindingFlags flags = cache.flags( to );
     if( flags & settings.avoid_mask() ) {
@@ -345,7 +344,6 @@ std::optional<int> creature_move_cost_internal( const PathfindingSettings &setti
                    ( !flags.is_set( PathfindingFlag::LockedDoor ) || !settings.avoid_unlocking_doors() ) ) {
             const bool is_inside_door = flags.is_set( PathfindingFlag::InsideDoor );
             if( is_inside_door ) {
-                const map &here = get_map();
                 int dummy;
                 const bool is_vehicle = flags.is_set( PathfindingFlag::Vehicle );
                 const bool is_outside = is_vehicle ? here.veh_at_internal( from.raw(),
@@ -376,7 +374,7 @@ std::optional<int> creature_move_cost_internal( const PathfindingSettings &setti
 
     const auto &maybe_avoid_dangerous_fields_fn = settings.maybe_avoid_dangerous_fields_fn();
     if( flags.is_set( PathfindingFlag::DangerousField ) && maybe_avoid_dangerous_fields_fn ) {
-        const field &target_field = get_map().field_at( to );
+        const field &target_field = here.field_at( to.raw() );
         for( const auto &dfield : target_field ) {
             if( dfield.second.is_dangerous() && maybe_avoid_dangerous_fields_fn( dfield.first ) ) {
                 return std::nullopt;
@@ -408,7 +406,7 @@ bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
         return true;
     }
     pathfinding_cache_->update( *this );
-    return creature_move_cost_internal( settings, *pathfinding_cache_, from, to ).has_value();
+    return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ ).has_value();
 }
 
 std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
@@ -418,7 +416,7 @@ std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_b
         return 0;
     }
     pathfinding_cache_->update( *this );
-    return creature_move_cost_internal( settings, *pathfinding_cache_, from, to );
+    return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_);
 }
 
 std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
@@ -430,7 +428,7 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
     pathfinding_cache_->update( *this );
     return pathfinder_->find_path( settings.rb_settings(), from, to,
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return creature_move_cost_internal( settings, *pathfinding_cache_, from, to );
+        return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_);
     },
     [to]( const tripoint_bub_ms & from ) {
         return 100 * rl_dist( from, to );
