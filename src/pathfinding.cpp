@@ -95,6 +95,13 @@ void RealityBubblePathfindingCache::update()
     dirty_positions_.clear();
 }
 
+RealityBubblePathfindingCache::RealityBubblePathfindingCache()
+{
+    for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; ++z ) {
+        dirty_z_levels_.emplace( z );
+    }
+}
+
 void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
 {
     PathfindingFlags flags;
@@ -107,7 +114,7 @@ void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
     const optional_vpart_position veh = here.veh_at( p );
 
     const int cost = here.move_cost( p );
-    move_cost_cache_[p.z()][p.y()][p.x()] = cost;
+    move_cost_ref( p ) = cost;
 
     if( cost > 2 ) {
         flags |= PathfindingFlag::Slow;
@@ -124,9 +131,9 @@ void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
         bool impassable = flags.is_set( PathfindingFlag::HardGround );
         if( const auto bash_range = here.bash_range( p.raw() ) ) {
             impassable = false;
-            bash_range_cache_[p.z()][p.y()][p.x()] = *bash_range;
+            bash_range_ref( p ) = *bash_range;
         } else {
-            bash_range_cache_[p.z()][p.y()][p.x()] = { std::numeric_limits<int>::max() - 1, std::numeric_limits<int>::max() };
+            bash_range_ref( p ) = { std::numeric_limits<int>::max() - 1, std::numeric_limits<int>::max() };
         }
 
         if( terrain.open || furniture.open ) {
@@ -222,7 +229,7 @@ void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
         }
     }
 
-    if( p.z() < OVERMAP_DEPTH - 1 ) {
+    if( p.z() < OVERMAP_HEIGHT ) {
         up_stair_destinations_.erase( p );
         const tripoint_bub_ms up( p.xy(), p.z() + 1 );
         if( terrain.has_flag( ter_furn_flag::TFLAG_GOES_UP ) ) {
@@ -252,7 +259,7 @@ void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
         }
     }
 
-    if( p.z() > 0 ) {
+    if( p.z() > -OVERMAP_DEPTH ) {
         down_stair_destinations_.erase( p );
         const tripoint_bub_ms down( p.xy(), p.z() - 1 );
         if( terrain.has_flag( ter_furn_flag::TFLAG_GOES_DOWN ) ) {
@@ -278,7 +285,7 @@ void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
         }
     }
 
-    flag_cache_[p.z()][p.y()][p.x()] = flags;
+    flags_ref( p ) = flags;
 }
 
 RealityBubblePathfinder *RealityBubblePathfinder::global()
@@ -301,16 +308,13 @@ int CreaturePathfindingSettings::bash_rating_from_range( int min, int max ) cons
     return std::max( ret, 1.0 );
 }
 
-bool CreaturePathfinder::can_move( const CreaturePathfindingSettings &settings,
-                                   const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+namespace
 {
-    return move_cost( settings, from, to ).has_value();
-}
 
-std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSettings &settings,
-        const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+std::optional<int> move_cost_internal( const CreaturePathfindingSettings &settings,
+                                       const RealityBubblePathfindingCache &cache, const tripoint_bub_ms &from, const tripoint_bub_ms &to )
 {
-    const PathfindingFlags flags = cache_->get_flags( to );
+    const PathfindingFlags flags = cache.flags( to );
     if( flags & settings.avoid_mask() ) {
         return std::nullopt;
     }
@@ -319,20 +323,20 @@ std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSetti
     if( is_vertical_movement ) {
         const tripoint_bub_ms &upper = from.z() > to.z() ? from : to;
         const tripoint_bub_ms &lower = from.z() < to.z() ? from : to;
-        if( cache_->get_flags( lower ).is_set( PathfindingFlag::GoesUp ) &&
-            cache_->get_flags( upper ).is_set( PathfindingFlag::GoesDown ) ) {
+        if( cache.flags( lower ).is_set( PathfindingFlag::GoesUp ) &&
+            cache.flags( upper ).is_set( PathfindingFlag::GoesDown ) ) {
             if( settings.avoid_climb_stairway() ) {
                 return std::nullopt;
             }
         } else if( settings.is_flying() ) {
             const tripoint_bub_ms below_upper( upper.xy(), upper.z() - 1 );
             const tripoint_bub_ms above_lower( lower.xy(), lower.z() + 1 );
-            if( !( cache_->get_flags( below_upper ).is_set( PathfindingFlag::Air ) ||
-                   cache_->get_flags( above_lower ).is_set( PathfindingFlag::Air ) ) ) {
+            if( !( cache.flags( below_upper ).is_set( PathfindingFlag::Air ) ||
+                   cache.flags( above_lower ).is_set( PathfindingFlag::Air ) ) ) {
                 return std::nullopt;
             }
         } else {
-            const PathfindingFlags from_flags = cache_->get_flags( from );
+            const PathfindingFlags from_flags = cache.flags( from );
             if( !( from.z() < to.z() && from_flags.is_set( PathfindingFlag::RampUp ) ) ||
                 !( from.z() > to.z() && from_flags.is_set( PathfindingFlag::RampDown ) ) ) {
                 return std::nullopt;
@@ -358,8 +362,8 @@ std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSetti
                 const map &here = get_map();
                 int dummy;
                 const bool is_vehicle = flags.is_set( PathfindingFlag::Vehicle );
-                const bool is_outside =  is_vehicle ? here.veh_at_internal( from.raw(),
-                                         dummy ) != here.veh_at_internal( to.raw(), dummy ) : here.is_outside( from.raw() );
+                const bool is_outside = is_vehicle ? here.veh_at_internal( from.raw(),
+                                        dummy ) != here.veh_at_internal( to.raw(), dummy ) : here.is_outside( from.raw() );
                 if( is_outside ) {
                     return std::nullopt;
                 }
@@ -372,7 +376,7 @@ std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSetti
             // One turn to open, one turn to move to the tile.
             extra_cost += 2 * turn_cost;
         } else {
-            const auto [bash_min, bash_max] = cache_->bash_range( to );
+            const auto [bash_min, bash_max] = cache.bash_range( to );
             const int bash_rating = settings.bash_rating_from_range( bash_min, bash_max );
             if( bash_rating >= 1 ) {
                 // Expected number of turns to bash it down, 1 turn to move there
@@ -405,16 +409,42 @@ std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSetti
     // 0 if all axes are equal, 100% if only 1 differs, 141% for 2, 200% for 3
     const std::size_t match = trigdist ? ( from.x() != to.x() ) + ( from.y() != to.y() ) +
                               is_vertical_movement : 1;
-    const int cost = cache_->move_cost( from ) + cache_->move_cost( to );
+    const int cost = cache.move_cost( from ) + cache.move_cost( to );
     return cost * mults[match] / 2 + extra_cost * 50;
+}
+
+}  // namespace
+
+bool CreaturePathfinder::can_move( const CreaturePathfindingSettings &settings,
+                                   const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+{
+    if (from == to) {
+        return true;
+    }
+    cache_->update();
+    return move_cost_internal( settings, *cache_, from, to ).has_value();
+}
+
+std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSettings &settings,
+        const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+{
+    if (from == to) {
+        return 0;
+    }
+    cache_->update();
+    return move_cost_internal( settings, *cache_, from, to );
 }
 
 std::vector<tripoint_bub_ms> CreaturePathfinder::find_path( const CreaturePathfindingSettings
         &settings, const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
 {
-    return RealityBubblePathfinder::global()->find_path( settings.rb_settings(), from, to,
+    if (from == to) {
+        return {};
+    }
+    // Pathfinder will update cache.
+    return pathfinder_->find_path( settings.rb_settings(), from, to,
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return move_cost( settings, from, to );
+        return move_cost_internal( settings, *cache_, from, to );
     },
     [to]( const tripoint_bub_ms & from ) {
         return 100 * rl_dist( from, to );

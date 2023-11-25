@@ -12,9 +12,6 @@ template <typename State, typename Cost = int, typename VisitedSet = std::unorde
 class AStarPathfinder
 {
     public:
-        AStarPathfinder( VisitedSet visited = VisitedSet{}, ParentMap parents = ParentMap{} ) : visited_
-            ( visited ), parents_( parents ) {}
-
         template <typename NeighborsFn, typename CostFn, typename HeuristicFn>
         std::vector<State> find_path( const State &from, const State &to, NeighborsFn neighbors_fn,
                                       CostFn cost_fn, HeuristicFn heuristic_fn );
@@ -123,16 +120,16 @@ class RealityBubblePathfindingCache
     public:
         static RealityBubblePathfindingCache *global();
 
-        PathfindingFlags get_flags( const tripoint_bub_ms &p ) const {
-            return flag_cache_[p.z()][p.y()][p.x()];
+        PathfindingFlags flags( const tripoint_bub_ms &p ) const {
+            return flag_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
         }
 
         int move_cost( const tripoint_bub_ms &p ) const {
-            return move_cost_cache_[p.z()][p.y()][p.x()];
+            return move_cost_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
         }
 
         const std::pair<int, int> &bash_range( const tripoint_bub_ms &p ) const {
-            return bash_range_cache_[p.z()][p.y()][p.x()];
+            return bash_range_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
         }
 
         const tripoint_bub_ms &stair_up_destination( const tripoint_bub_ms &p ) const {
@@ -155,6 +152,20 @@ class RealityBubblePathfindingCache
         }
 
     private:
+        RealityBubblePathfindingCache();
+
+        PathfindingFlags &flags_ref( const tripoint_bub_ms &p ) {
+            return flag_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
+        }
+
+        int &move_cost_ref( const tripoint_bub_ms &p ) {
+            return move_cost_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
+        }
+
+        std::pair<int, int> &bash_range_ref( const tripoint_bub_ms &p ) {
+            return bash_range_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
+        }
+
         bool vertical_move_destination( ter_furn_flag flag, tripoint &t ) const;
 
         void invalidate_dependants( const tripoint_bub_ms &p );
@@ -212,6 +223,7 @@ class RealityBubblePathfinder
                                                 CostFn cost_fn, HeuristicFn heuristic_fn );
 
     private:
+        /*
         struct IndexVisitedSet {
             void emplace( int index );
             void clear();
@@ -233,10 +245,10 @@ class RealityBubblePathfinder
             constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
             return tripoint_bub_ms( index / layer_size - OVERMAP_DEPTH, ( index % layer_size ) / MAPSIZE_X,
                                     index % MAPSIZE_X );
-        }
+        }*/
 
-        RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<int, int, IndexVisitedSet, IndexParentsMap> astar_;
+        RealityBubblePathfindingCache *cache_ = RealityBubblePathfindingCache::global();
+        AStarPathfinder<tripoint_bub_ms/*int, int, IndexVisitedSet, IndexParentsMap*/> astar_;
 };
 
 class CreaturePathfindingSettings
@@ -487,10 +499,6 @@ class CreaturePathfindingSettings
 class CreaturePathfinder
 {
     public:
-        CreaturePathfinder() : CreaturePathfinder( RealityBubblePathfindingCache::global() ) {}
-
-        explicit CreaturePathfinder( RealityBubblePathfindingCache *cache ) : cache_( cache ) {}
-
         // If the creature can move to a tile.
         bool can_move( const CreaturePathfindingSettings &settings, const tripoint_bub_ms &from,
                        const tripoint_bub_ms &to ) const;
@@ -504,7 +512,8 @@ class CreaturePathfinder
                                                 const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const;
 
     private:
-        RealityBubblePathfindingCache *cache_;
+        RealityBubblePathfindingCache *cache_ = RealityBubblePathfindingCache::global();
+        RealityBubblePathfinder *pathfinder_ = RealityBubblePathfinder::global();
 };
 
 // Implementation Details
@@ -527,6 +536,7 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, ParentMap>::find_pat
     std::vector<State> result;
 
     visited_.clear();
+    parents_.clear();
     // The first parameter should be heuristic_fn(start), but it is immediately popped
     // so there is no reason to waste the time.
     frontier.emplace( 0, 0, from, from );
@@ -566,6 +576,7 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, ParentMap>::find_pat
     return result;
 }
 
+/*
 inline void RealityBubblePathfinder::IndexVisitedSet::emplace( int index )
 {
     visited.set( index );
@@ -589,29 +600,29 @@ inline void RealityBubblePathfinder::IndexParentsMap::emplace( int child, int pa
 inline int RealityBubblePathfinder::IndexParentsMap::operator[]( int child ) const
 {
     return parents[child];
-}
+}*/
 
 template <typename CostFn, typename HeuristicFn>
 std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         RealityBubblePathfindingSettings &settings, const tripoint_bub_ms &from,
         const tripoint_bub_ms &to, CostFn cost_fn, HeuristicFn heuristic_fn )
 {
-    const std::vector<int> index_path = astar_.find_path( get_index( from ),
-                                        get_index( to ), [this, &settings]( int index,
+    cache_->update();
+    std::vector<tripoint_bub_ms> path = astar_.find_path( from, to, [this,
+                                        &settings]( const tripoint_bub_ms & current,
     auto &&emit_fn ) {
-        const tripoint_bub_ms current = get_tripoint( index );
         for( int y = std::max( current.y() - 1, 0 ); y < std::min( current.y() + 1, MAPSIZE_Y ); ++y ) {
             for( int x = std::max( current.x() - 1, 0 ); x < std::min( current.x() + 1, MAPSIZE_X ); ++x ) {
                 if( x == current.x() && y == current.y() ) {
                     continue;
                 }
                 const tripoint_bub_ms next = tripoint_bub_ms( x, y, current.z() );
-                emit_fn( get_index( next ) );
+                emit_fn( next );
             }
         }
 
         if( settings.allow_flying() ) {
-            for( int z = std::max( current.z() - 1, 0 ); z < std::min( current.z() + 1, OVERMAP_LAYERS );
+            for( int z = std::max( current.z() - 1, -OVERMAP_DEPTH ); z <= std::min( current.z() + 1, OVERMAP_HEIGHT );
                  ++z ) {
                 if( z == current.z() ) {
                     continue;
@@ -619,20 +630,20 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                 for( int y = std::max( current.y() - 1, 0 ); y < std::min( current.y() + 1, MAPSIZE_Y ); ++y ) {
                     for( int x = std::max( current.x() - 1, 0 ); x < std::min( current.x() + 1, MAPSIZE_X ); ++x ) {
                         const tripoint_bub_ms next( x, y, z );
-                        emit_fn( get_index( next ) );
+                        emit_fn( next );
                     }
                 }
             }
             return;
         }
 
-        const PathfindingFlags flags = cache_->get_flags( current );
+        const PathfindingFlags flags = cache_->flags( current );
         if( settings.allow_stairways() ) {
             if( flags.is_set( PathfindingFlag::GoesDown ) ) {
-                emit_fn( get_index( cache_->stair_down_destination( current ) ) );
+                emit_fn( cache_->stair_down_destination( current ) );
             }
             if( flags.is_set( PathfindingFlag::GoesUp ) ) {
-                emit_fn( get_index( cache_->stair_up_destination( current ) ) );
+                emit_fn( cache_->stair_up_destination( current ) );
             }
         }
         if( flags.is_set( PathfindingFlag::RampUp ) ) {
@@ -642,7 +653,7 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                         continue;
                     }
                     const tripoint_bub_ms above( x, y, current.z() + 1 );
-                    emit_fn( get_index( above ) );
+                    emit_fn( above );
                 }
             }
         }
@@ -653,20 +664,11 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                         continue;
                     }
                     const tripoint_bub_ms below( x, y, current.z() - 1 );
-                    emit_fn( get_index( below ) );
+                    emit_fn( below );
                 }
             }
         }
-    }, [cost_fn]( int from, int to ) {
-        return cost_fn( get_tripoint( from ), get_tripoint( to ) );
-    }, [heuristic_fn]( int index ) {
-        return heuristic_fn( get_tripoint( index ) );
-    } );
-
-    std::vector<tripoint_bub_ms> path;
-    for( int index : index_path ) {
-        path.push_back( get_tripoint( index ) );
-    }
+    }, std::move( cost_fn ), std::move( heuristic_fn ) );
     return path;
 }
 
