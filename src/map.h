@@ -350,6 +350,7 @@ class map
         void set_outside_cache_dirty( int zlev );
         void set_floor_cache_dirty( int zlev );
         void set_pathfinding_cache_dirty( int zlev );
+        void set_pathfinding_cache_dirty( const tripoint_bub_ms &p );
         void set_visitable_zones_cache_dirty( bool dirty = true ) {
             visitable_cache_dirty = dirty;
         };
@@ -1026,6 +1027,10 @@ class map
         int bash_rating( const int str, const point &p ) const {
             return bash_rating( str, tripoint( p, abs_sub.z() ) );
         }
+
+        // The range of minimum and maximum bash strength needed to bash something on the given tile.
+        // Returns std::nullopt if there is nothing bashable.
+        std::optional<std::pair<int, int>> bash_range( const tripoint &p, bool allow_floor = false ) const;
 
         // Rubble
         /** Generates rubble at the given location, if overwrite is true it just writes on top of what currently exists
@@ -2199,7 +2204,6 @@ class map
          */
         mutable std::array< std::unique_ptr<level_cache>, OVERMAP_LAYERS > caches;
 
-        mutable std::array< std::unique_ptr<pathfinding_cache>, OVERMAP_LAYERS > pathfinding_caches;
         /**
          * Set of submaps that contain active items in absolute coordinates.
          */
@@ -2223,8 +2227,6 @@ class map
         level_cache *get_cache_lazy( int zlev ) const {
             return caches[zlev + OVERMAP_DEPTH].get();
         }
-
-        pathfinding_cache &get_pathfinding_cache( int zlev ) const;
 
         visibility_variables visibility_variables_cache;
 
@@ -2295,10 +2297,6 @@ class map
         const level_cache &get_cache_ref( int zlev ) const {
             return get_cache( zlev );
         }
-
-        const pathfinding_cache &get_pathfinding_cache_ref( int zlev ) const;
-
-        void update_pathfinding_cache( int zlev ) const;
 
         void update_visibility_cache( int zlev );
         void invalidate_visibility_cache();

@@ -15,12 +15,14 @@
 #include <vector>
 
 #include "calendar.h"
+#include "cata_utility.h"
 #include "character_id.h"
 #include "color.h"
 #include "compatibility.h"
 #include "creature.h"
 #include "damage.h"
 #include "enums.h"
+#include "pathfinding.h"
 #include "point.h"
 #include "type_id.h"
 #include "units_fwd.h"
@@ -39,7 +41,6 @@ namespace catacurses
 class window;
 }  // namespace catacurses
 struct dealt_projectile_attack;
-struct pathfinding_settings;
 struct trap;
 
 enum class mon_trigger : int;
@@ -197,22 +198,18 @@ class monster : public Creature
         void set_patrol_route( const std::vector<point> &patrol_pts_rel_ms );
 
         /**
-         * Checks whether we can move to/through p. This does not account for bashing.
+         * Checks whether we can move to/through p. This does account for bashing.
          *
          * This is used in pathfinding and ONLY checks the terrain. It ignores players
          * and monsters, which might only block this tile temporarily.
-         * will_move_to() checks for impassable terrain etc
-         * can_reach_to() checks for z-level difference.
-         * can_move_to() is a wrapper for both of them.
-         * know_danger_at() checks for fire, trap etc. (flag PATH_AVOID_)
+         *
+         * This uses the information from the latest call to update_pathfinding_settings().
          */
-        bool can_move_to( const tripoint &p ) const;
-        bool can_reach_to( const tripoint &p ) const;
-        bool will_move_to( const tripoint &p ) const;
-        bool know_danger_at( const tripoint &p ) const;
-
-        bool will_reach( const point &p ); // Do we have plans to get to (x, y)?
-        int  turns_to_reach( const point &p ); // How long will it take?
+        bool can_move_to( const tripoint &p ) const {
+            return can_move_to( get_pathfinding_settings(), p );
+        }
+        bool can_move_to( const CreaturePathfindingSettings &settings, const tripoint &p ) const;
+        CreaturePathfindingSettings get_pathfinding_settings() const;
 
         // Returns true if the monster has a current goal
         bool has_dest() const;
@@ -602,8 +599,6 @@ class monster : public Creature
          */
         void on_load();
 
-        const pathfinding_settings &get_pathfinding_settings() const override;
-        std::set<tripoint> get_path_avoid() const override;
     private:
         void process_trigger( mon_trigger trig, int amount );
         void process_trigger( mon_trigger trig, const std::function<int()> &amount_func );
