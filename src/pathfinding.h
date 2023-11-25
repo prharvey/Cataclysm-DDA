@@ -10,7 +10,7 @@
 
 class map;
 
-template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename ParentMap = std::unordered_map<State, State>>
+template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>>
 class AStarPathfinder
 {
     public:
@@ -19,8 +19,10 @@ class AStarPathfinder
                                       CostFn cost_fn, HeuristicFn heuristic_fn );
 
     private:
+        using StorageNode = std::tuple<Cost, State, int>;
+
         VisitedSet visited_;
-        ParentMap parents_;
+        std::vector<StorageNode> history_;
 };
 
 
@@ -223,17 +225,17 @@ class RealityBubblePathfinder
                                                 CostFn cost_fn, HeuristicFn heuristic_fn );
 
     private:
-        /*
         struct IndexVisitedSet {
-            void emplace( int index );
-            void clear();
-            std::size_t count( int index ) const;
-            std::bitset<MAPSIZE_X *MAPSIZE_Y *OVERMAP_LAYERS> visited;
-        };
-        struct IndexParentsMap {
-            void emplace( int child, int parent );
-            int operator[]( int child ) const;
-            std::array<int, MAPSIZE_X *MAPSIZE_Y *OVERMAP_LAYERS> parents;
+            void emplace( const tripoint_bub_ms &p );
+
+            void clear() {
+                in.clear();
+            }
+
+            std::size_t count( const tripoint_bub_ms &p ) const;
+
+            std::vector<int> in;
+            std::array<int, MAPSIZE_X *MAPSIZE_Y *OVERMAP_LAYERS> visited;
         };
 
         static constexpr int get_index( const tripoint_bub_ms &p ) {
@@ -241,14 +243,8 @@ class RealityBubblePathfinder
             return ( p.z() + OVERMAP_DEPTH ) * layer_size + p.y() * MAPSIZE_X + p.x();
         }
 
-        static constexpr tripoint_bub_ms get_tripoint( int index ) {
-            constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
-            return tripoint_bub_ms( index / layer_size - OVERMAP_DEPTH, ( index % layer_size ) / MAPSIZE_X,
-                                    index % MAPSIZE_X );
-        }*/
-
         RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<tripoint_bub_ms/*int, int, IndexVisitedSet, IndexParentsMap*/> astar_;
+        AStarPathfinder<tripoint_bub_ms, int, IndexVisitedSet> astar_;
 };
 
 class PathfindingSettings
@@ -505,49 +501,53 @@ struct FirstElementGreaterThan {
     }
 };
 
-template <typename State, typename Cost, typename VisitedSet, typename ParentMap>
+template <typename State, typename Cost, typename VisitedSet>
 template <typename NeighborsFn, typename CostFn, typename HeuristicFn>
-std::vector<State> AStarPathfinder<State, Cost, VisitedSet, ParentMap>::find_path(
+std::vector<State> AStarPathfinder<State, Cost, VisitedSet>::find_path(
     const State &from, const State &to, NeighborsFn neighbors_fn, CostFn cost_fn,
     HeuristicFn heuristic_fn )
 {
-    using Node = std::tuple<Cost, Cost, State, State>;
-    std::priority_queue< Node, std::vector< Node>, FirstElementGreaterThan> frontier;
+    using FrontierNode = std::tuple<Cost, int>;
+    std::priority_queue< FrontierNode, std::vector< FrontierNode>, FirstElementGreaterThan> frontier;
     std::vector<State> result;
 
     visited_.clear();
-    parents_.clear();
+    history_.clear();
+    history_.emplace_back( 0, from, 0 );
     // The first parameter should be heuristic_fn(start), but it is immediately popped
     // so there is no reason to waste the time.
-    frontier.emplace( 0, 0, from, from );
+    frontier.emplace( 0, 0 );
     do {
-        const auto [_, current_cost, current_state, current_parent] = frontier.top();
+        const auto [_, index] = frontier.top();
         frontier.pop();
+
+        const auto [current_cost, current_state, current_parent] = history_[index];
 
         if( visited_.count( current_state ) == 1 ) {
             continue;
         }
 
         visited_.emplace( current_state );
-        parents_.emplace( current_state, current_parent );
 
         if( current_state == to ) {
-            State out = current_state;
-            while( out != from ) {
-                result.push_back( out );
-                out = parents_[out];
+            int out = index;
+            while( out != 0 ) {
+                const auto& [_, out_state, out_parent] = history_[out];
+                result.push_back( out_state );
+                out = out_parent;
             }
             std::reverse( result.begin(), result.end() );
             break;
         }
 
-        neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state,
+        neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state, index,
               current_cost]( const State & neighbour ) {
             if( visited_.count( neighbour ) == 0 ) {
                 if( const std::optional<Cost> transition_cost = cost_fn( current_state, neighbour ) ) {
                     const Cost new_cost = current_cost + *transition_cost;
+                    history_.emplace_back( new_cost, neighbour, index );
                     const Cost estimated_cost = new_cost + heuristic_fn( neighbour );
-                    frontier.emplace( estimated_cost, new_cost, neighbour, current_state );
+                    frontier.emplace( estimated_cost, history_.size() - 1 );
                 }
             }
         } );
@@ -556,31 +556,23 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, ParentMap>::find_pat
     return result;
 }
 
-/*
-inline void RealityBubblePathfinder::IndexVisitedSet::emplace( int index )
+inline void RealityBubblePathfinder::IndexVisitedSet::emplace( const tripoint_bub_ms &p )
 {
-    visited.set( index );
+    const int i = get_index( p );
+    const int test = visited[i];
+    if( test >= in.size() || in[test] != i ) {
+        visited[i] = in.size();
+        in.push_back( i );
+    }
 }
 
-inline void RealityBubblePathfinder::IndexVisitedSet::clear()
+inline std::size_t RealityBubblePathfinder::IndexVisitedSet::count( const tripoint_bub_ms &p )
+const
 {
-    visited.reset();
+    const int i = get_index( p );
+    const int test = visited[i];
+    return test < in.size() && in[test] == i;
 }
-
-inline std::size_t RealityBubblePathfinder::IndexVisitedSet::count( int index ) const
-{
-    return visited.test( index );
-}
-
-inline void RealityBubblePathfinder::IndexParentsMap::emplace( int child, int parent )
-{
-    parents[child] = parent;
-}
-
-inline int RealityBubblePathfinder::IndexParentsMap::operator[]( int child ) const
-{
-    return parents[child];
-}*/
 
 template <typename CostFn, typename HeuristicFn>
 std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
