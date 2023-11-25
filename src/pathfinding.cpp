@@ -26,11 +26,11 @@
 #include "vehicle.h"
 #include "vpart_position.h"
 
-
-RealityBubblePathfindingCache *RealityBubblePathfindingCache::global()
+RealityBubblePathfindingCache::RealityBubblePathfindingCache()
 {
-    static RealityBubblePathfindingCache *global = new RealityBubblePathfindingCache();
-    return global;
+    for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; ++z ) {
+        dirty_z_levels_.emplace( z );
+    }
 }
 
 // Modifies `t` to point to a tile with `flag` in a 1-submap radius of `t`'s original value, searching
@@ -71,14 +71,14 @@ void RealityBubblePathfindingCache::invalidate_dependants( const tripoint_bub_ms
     }
 }
 
-void RealityBubblePathfindingCache::update()
+void RealityBubblePathfindingCache::update( const map &here )
 {
     for( const int z : dirty_z_levels_ ) {
         for( int y = 0; y < MAPSIZE_Y; ++y ) {
             for( int x = 0; x < MAPSIZE_X; ++x ) {
                 const tripoint_bub_ms p( x, y, z );
                 invalidate_dependants( p );
-                update( p );
+                update( here, p );
             }
         }
     }
@@ -89,24 +89,16 @@ void RealityBubblePathfindingCache::update()
 
     for( const auto& [z, dirty_points] : dirty_positions_ ) {
         for( const point_bub_ms &p : dirty_points ) {
-            update( tripoint_bub_ms( p, z ) );
+            update( here, tripoint_bub_ms( p, z ) );
         }
     }
     dirty_positions_.clear();
 }
 
-RealityBubblePathfindingCache::RealityBubblePathfindingCache()
-{
-    for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; ++z ) {
-        dirty_z_levels_.emplace( z );
-    }
-}
-
-void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
+void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_ms &p )
 {
     PathfindingFlags flags;
 
-    map &here = get_map();
     const const_maptile &tile = here.maptile_at( p );
     const ter_t &terrain = tile.get_ter_t();
     const ter_id terrain_id = tile.get_ter();
@@ -288,13 +280,7 @@ void RealityBubblePathfindingCache::update( const tripoint_bub_ms &p )
     flags_ref( p ) = flags;
 }
 
-RealityBubblePathfinder *RealityBubblePathfinder::global()
-{
-    static RealityBubblePathfinder *global = new RealityBubblePathfinder();
-    return global;
-}
-
-int CreaturePathfindingSettings::bash_rating_from_range( int min, int max ) const
+int PathfindingSettings::bash_rating_from_range( int min, int max ) const
 {
     // TODO: Move all the bash stuff to map so this logic isn't duplicated.
     ///\EFFECT_STR increases smashing damage
@@ -311,8 +297,8 @@ int CreaturePathfindingSettings::bash_rating_from_range( int min, int max ) cons
 namespace
 {
 
-std::optional<int> move_cost_internal( const CreaturePathfindingSettings &settings,
-                                       const RealityBubblePathfindingCache &cache, const tripoint_bub_ms &from, const tripoint_bub_ms &to )
+std::optional<int> creature_move_cost_internal( const PathfindingSettings &settings,
+        const RealityBubblePathfindingCache &cache, const tripoint_bub_ms &from, const tripoint_bub_ms &to )
 {
     const PathfindingFlags flags = cache.flags( to );
     if( flags & settings.avoid_mask() ) {
@@ -415,45 +401,45 @@ std::optional<int> move_cost_internal( const CreaturePathfindingSettings &settin
 
 }  // namespace
 
-bool CreaturePathfinder::can_move( const CreaturePathfindingSettings &settings,
-                                   const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
+                    const PathfindingSettings &settings ) const
 {
-    if (from == to) {
+    if( from == to ) {
         return true;
     }
-    cache_->update();
-    return move_cost_internal( settings, *cache_, from, to ).has_value();
+    pathfinding_cache_->update( *this );
+    return creature_move_cost_internal( settings, *pathfinding_cache_, from, to ).has_value();
 }
 
-std::optional<int> CreaturePathfinder::move_cost( const CreaturePathfindingSettings &settings,
-        const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
+                                   const PathfindingSettings &settings ) const
 {
-    if (from == to) {
+    if( from == to ) {
         return 0;
     }
-    cache_->update();
-    return move_cost_internal( settings, *cache_, from, to );
+    pathfinding_cache_->update( *this );
+    return creature_move_cost_internal( settings, *pathfinding_cache_, from, to );
 }
 
-std::vector<tripoint_bub_ms> CreaturePathfinder::find_path( const CreaturePathfindingSettings
-        &settings, const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const
+std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
+        const PathfindingSettings &settings ) const
 {
-    if (from == to) {
+    if( from == to ) {
         return {};
     }
-    // Pathfinder will update cache.
+    pathfinding_cache_->update( *this );
     return pathfinder_->find_path( settings.rb_settings(), from, to,
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return move_cost_internal( settings, *cache_, from, to );
+        return creature_move_cost_internal( settings, *pathfinding_cache_, from, to );
     },
     [to]( const tripoint_bub_ms & from ) {
         return 100 * rl_dist( from, to );
     } );
 }
 
-CreaturePathfindingSettings pathfinding_settings::to_creature_pathfinding_settings() const
+PathfindingSettings pathfinding_settings::to_new_pathfinding_settings() const
 {
-    CreaturePathfindingSettings settings;
+    PathfindingSettings settings;
     settings.set_bash_strength( bash_strength );
     settings.set_max_distance( max_dist );
     settings.set_max_cost( max_length * 50 );
@@ -487,13 +473,12 @@ std::vector<tripoint> map::route( const tripoint &f, const tripoint &t,
         return route( f, clipped, settings, pre_closed );
     }
 
-    CreaturePathfinder pathfinder;
-    CreaturePathfindingSettings new_settings = settings.to_creature_pathfinding_settings();
+    PathfindingSettings new_settings = settings.to_new_pathfinding_settings();
     new_settings.set_maybe_avoid_fn( [&pre_closed]( const tripoint_bub_ms & p ) {
         return pre_closed.count( p.raw() ) == 1;
     } );
-    for( const tripoint_bub_ms &p : pathfinder.find_path( new_settings, tripoint_bub_ms( f ),
-            tripoint_bub_ms( t ) ) ) {
+    for( const tripoint_bub_ms &p : route( tripoint_bub_ms( f ), tripoint_bub_ms( t ),
+                                           new_settings ) ) {
         ret.push_back( p.raw() );
     }
 

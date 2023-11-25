@@ -202,6 +202,9 @@ map::map( int mapsize, bool zlev ) : my_MAPSIZE( mapsize ), my_HALF_MAPSIZE( map
         grid.resize( static_cast<size_t>( my_MAPSIZE ) * my_MAPSIZE, nullptr );
     }
 
+    pathfinding_cache_ = std::make_unique<RealityBubblePathfindingCache>();
+    pathfinder_ = std::make_unique<RealityBubblePathfinder>( pathfinding_cache_.get() );
+
     dbg( D_INFO ) << "map::map(): my_MAPSIZE: " << my_MAPSIZE << " z-levels enabled:" << zlevels;
     traplocs.resize( trap::count() );
 }
@@ -8704,11 +8707,11 @@ void map::spawn_monsters_submap_group( const tripoint &gp, mongroup &group, bool
 
     // Find horde's target submap
     for( monster &tmp : group.monsters ) {
-        const CreaturePathfindingSettings settings = tmp.get_pathfinding_settings();
+        const PathfindingSettings settings = tmp.get_pathfinding_settings();
         for( int tries = 0; tries < 10 && !locations.empty(); tries++ ) {
             const tripoint local_pos = random_entry_removed( locations );
             const tripoint_abs_ms abs_pos = get_map().getglobal( local_pos );
-            if( !tmp.can_move_to( settings, local_pos ) ) {
+            if( !tmp.can_move_to( local_pos, settings ) ) {
                 continue; // target can not contain the monster
             }
             if( group.horde ) {
@@ -10004,14 +10007,14 @@ const level_cache &map::access_cache( int zlev ) const
 void map::set_pathfinding_cache_dirty( const int zlev )
 {
     if( inbounds_z( zlev ) ) {
-        RealityBubblePathfindingCache::global()->invalidate( zlev );
+        pathfinding_cache_->invalidate( zlev );
     }
 }
 
 void map::set_pathfinding_cache_dirty( const tripoint_bub_ms &p )
 {
     if( inbounds( p ) ) {
-        RealityBubblePathfindingCache::global()->invalidate( p );
+        pathfinding_cache_->invalidate( p );
     }
 }
 

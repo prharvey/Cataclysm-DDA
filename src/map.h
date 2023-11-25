@@ -38,6 +38,7 @@
 #include "map_selector.h"
 #include "mapdata.h"
 #include "maptile_fwd.h"
+#include "pathfinding.h"
 #include "point.h"
 #include "reachability_cache.h"
 #include "rng.h"
@@ -91,8 +92,6 @@ using VehicleList = std::vector<wrapped_vehicle>;
 class map;
 
 enum class ter_furn_flag : int;
-struct pathfinding_cache;
-struct pathfinding_settings;
 template<typename T>
 struct weighted_int_list;
 struct field_proc_data;
@@ -360,6 +359,10 @@ class map
         /*@}*/
 
         void invalidate_map_cache( int zlev );
+
+        RealityBubblePathfindingCache *pathfinding_cache() const {
+            return pathfinding_cache_.get();
+        }
 
         // @returns true if map memory decoration should be re/memorized
         bool memory_cache_dec_is_dirty( const tripoint &p ) const;
@@ -664,6 +667,13 @@ class map
         std::vector<tripoint_bub_ms> route( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
                                             const pathfinding_settings &settings,
         const std::set<tripoint> &pre_closed = {{ }} ) const;
+
+        bool can_move( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
+                       const PathfindingSettings &settings ) const;
+        std::optional<int> move_cost( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
+                                      const PathfindingSettings &settings ) const;
+        std::vector<tripoint_bub_ms> route( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
+                                            const PathfindingSettings &settings ) const;
 
         // Vehicles: Common to 2D and 3D
         VehicleList get_vehicles();
@@ -2203,6 +2213,9 @@ class map
          * Holds caches for visibility, light, transparency and vehicles
          */
         mutable std::array< std::unique_ptr<level_cache>, OVERMAP_LAYERS > caches;
+
+        std::unique_ptr<RealityBubblePathfindingCache> pathfinding_cache_;
+        std::unique_ptr<RealityBubblePathfinder> pathfinder_;
 
         /**
          * Set of submaps that contain active items in absolute coordinates.

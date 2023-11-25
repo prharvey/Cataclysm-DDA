@@ -8,6 +8,8 @@
 #include "mdarray.h"
 #include "type_id.h"
 
+class map;
+
 template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename ParentMap = std::unordered_map<State, State>>
 class AStarPathfinder
 {
@@ -118,7 +120,7 @@ constexpr PathfindingFlags operator&( PathfindingFlags lhs, PathfindingFlag rhs 
 class RealityBubblePathfindingCache
 {
     public:
-        static RealityBubblePathfindingCache *global();
+        RealityBubblePathfindingCache();
 
         PathfindingFlags flags( const tripoint_bub_ms &p ) const {
             return flag_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
@@ -140,7 +142,7 @@ class RealityBubblePathfindingCache
             return down_stair_destinations_.find( p )->second;
         }
 
-        void update();
+        void update( const map &here );
 
         void invalidate( int z ) {
             dirty_z_levels_.emplace( z );
@@ -152,8 +154,6 @@ class RealityBubblePathfindingCache
         }
 
     private:
-        RealityBubblePathfindingCache();
-
         PathfindingFlags &flags_ref( const tripoint_bub_ms &p ) {
             return flag_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
         }
@@ -170,7 +170,7 @@ class RealityBubblePathfindingCache
 
         void invalidate_dependants( const tripoint_bub_ms &p );
 
-        void update( const tripoint_bub_ms &p );
+        void update( const map &here, const tripoint_bub_ms &p );
 
         std::unordered_set<int> dirty_z_levels_;
         std::unordered_map<int, std::unordered_set<point_bub_ms>> dirty_positions_;
@@ -215,7 +215,7 @@ class RealityBubblePathfinder
     public:
         // The class uses a lot of memory, and is safe to reuse as long as none of the provided
         // functors to find_path make use of it.
-        static RealityBubblePathfinder *global();
+        explicit RealityBubblePathfinder( RealityBubblePathfindingCache *cache ) : cache_( cache ) {}
 
         template <typename CostFn, typename HeuristicFn>
         std::vector<tripoint_bub_ms> find_path( const RealityBubblePathfindingSettings &settings,
@@ -247,11 +247,11 @@ class RealityBubblePathfinder
                                     index % MAPSIZE_X );
         }*/
 
-        RealityBubblePathfindingCache *cache_ = RealityBubblePathfindingCache::global();
+        RealityBubblePathfindingCache *cache_;
         AStarPathfinder<tripoint_bub_ms/*int, int, IndexVisitedSet, IndexParentsMap*/> astar_;
 };
 
-class CreaturePathfindingSettings
+class PathfindingSettings
 {
     public:
         static constexpr PathfindingFlags RoughTerrain = PathfindingFlag::Slow | PathfindingFlag::Obstacle |
@@ -455,7 +455,7 @@ class CreaturePathfindingSettings
             return rb_settings_;
         }
 
-        friend class CreaturePathfinder;
+        friend class map;
 
     private:
         bool is_set( PathfindingFlags flag ) const {
@@ -494,26 +494,6 @@ class CreaturePathfindingSettings
         std::function<bool( const field_type_id & )> maybe_avoid_dangerous_fields_fn_;
         std::function<bool( const tripoint_bub_ms & )> maybe_avoid_fn_;
         PathfindingFlags avoid_mask_ = PathfindingFlag::Air | PathfindingFlag::Impassable;
-};
-
-class CreaturePathfinder
-{
-    public:
-        // If the creature can move to a tile.
-        bool can_move( const CreaturePathfindingSettings &settings, const tripoint_bub_ms &from,
-                       const tripoint_bub_ms &to ) const;
-
-        // Find the cost of movement between two adjacent points.
-        // Returns std::nullopt if it isn't possible to move.
-        std::optional<int> move_cost( const CreaturePathfindingSettings &settings,
-                                      const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const;
-
-        std::vector<tripoint_bub_ms> find_path( const CreaturePathfindingSettings &settings,
-                                                const tripoint_bub_ms &from, const tripoint_bub_ms &to ) const;
-
-    private:
-        RealityBubblePathfindingCache *cache_ = RealityBubblePathfindingCache::global();
-        RealityBubblePathfinder *pathfinder_ = RealityBubblePathfinder::global();
 };
 
 // Implementation Details
@@ -607,7 +587,6 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         RealityBubblePathfindingSettings &settings, const tripoint_bub_ms &from,
         const tripoint_bub_ms &to, CostFn cost_fn, HeuristicFn heuristic_fn )
 {
-    cache_->update();
     std::vector<tripoint_bub_ms> path = astar_.find_path( from, to, [this,
                                         &settings]( const tripoint_bub_ms & current,
     auto &&emit_fn ) {
@@ -622,7 +601,8 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         }
 
         if( settings.allow_flying() ) {
-            for( int z = std::max( current.z() - 1, -OVERMAP_DEPTH ); z <= std::min( current.z() + 1, OVERMAP_HEIGHT );
+            for( int z = std::max( current.z() - 1, -OVERMAP_DEPTH );
+                 z <= std::min( current.z() + 1, OVERMAP_HEIGHT );
                  ++z ) {
                 if( z == current.z() ) {
                     continue;
@@ -703,7 +683,7 @@ struct pathfinding_settings {
     pathfinding_settings &operator=( const pathfinding_settings & ) = default;
 
     // Converion to the new settings, while everything is being migrated.
-    CreaturePathfindingSettings to_creature_pathfinding_settings() const;
+    PathfindingSettings to_new_pathfinding_settings() const;
 };
 
 #endif // CATA_SRC_PATHFINDING_H

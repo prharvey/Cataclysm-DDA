@@ -207,10 +207,10 @@ class monster : public Creature
          * This uses the information from the latest call to update_pathfinding_settings().
          */
         bool can_move_to( const tripoint &p ) const {
-            return can_move_to( get_pathfinding_settings(), p );
+            return can_move_to( p, get_pathfinding_settings() );
         }
-        bool can_move_to( const CreaturePathfindingSettings &settings, const tripoint &p ) const;
-        CreaturePathfindingSettings get_pathfinding_settings() const;
+        bool can_move_to( const tripoint &p, const PathfindingSettings &settings ) const;
+        PathfindingSettings get_pathfinding_settings() const;
 
         // Returns true if the monster has a current goal
         bool has_dest() const;

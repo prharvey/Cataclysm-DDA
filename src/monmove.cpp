@@ -162,9 +162,9 @@ static bool z_is_valid( int z )
     return z >= -OVERMAP_DEPTH && z <= OVERMAP_HEIGHT;
 }
 
-CreaturePathfindingSettings monster::get_pathfinding_settings() const
+PathfindingSettings monster::get_pathfinding_settings() const
 {
-    CreaturePathfindingSettings settings = type->path_settings.to_creature_pathfinding_settings();
+    PathfindingSettings settings = type->path_settings.to_new_pathfinding_settings();
 
     settings.set_is_digging( digging() );
 
@@ -266,10 +266,9 @@ CreaturePathfindingSettings monster::get_pathfinding_settings() const
     return settings;
 }
 
-bool monster::can_move_to( const CreaturePathfindingSettings &settings, const tripoint &p ) const
+bool monster::can_move_to( const tripoint &p, const PathfindingSettings &settings ) const
 {
-    CreaturePathfinder pathfinder;
-    return pathfinder.can_move( settings, pos_bub(), tripoint_bub_ms( p ) );
+    return get_map().can_move( pos_bub(), tripoint_bub_ms( p ), settings );
 }
 
 float monster::rate_target( Creature &c, float best, bool smart ) const
@@ -1037,12 +1036,12 @@ void monster::move()
     bool moved = false;
     tripoint destination;
 
-    const CreaturePathfindingSettings settings = get_pathfinding_settings();
+    const PathfindingSettings settings = get_pathfinding_settings();
     bool try_to_move = false;
     creature_tracker &creatures = get_creature_tracker();
     for( const tripoint &dest : here.points_in_radius( pos(), 1 ) ) {
         if( dest != pos() ) {
-            if( can_move_to( settings, dest ) &&
+            if( can_move_to( dest, settings ) &&
                 creatures.creature_at( dest, true ) == nullptr ) {
                 try_to_move = true;
                 break;
@@ -1084,10 +1083,8 @@ void monster::move()
             if( settings.max_distance() >= rl_dist( get_location(), get_dest() ) &&
                 ( path.empty() || rl_dist( pos(), path.front() ) >= 2 || path.back() != local_dest ) ) {
                 // We need a new path
-                CreaturePathfinder pathfinder;
                 path.clear();
-                for( const tripoint_bub_ms &p : pathfinder.find_path( settings, pos_bub(),
-                        tripoint_bub_ms( local_dest ) ) ) {
+                for( const tripoint_bub_ms &p : here.route( pos_bub(), tripoint_bub_ms( local_dest ), settings ) ) {
                     path.push_back( p.raw() );
                 }
             }
@@ -1250,7 +1247,7 @@ void monster::move()
             // Try to shove vehicle out of the way
             shove_vehicle( destination, candidate );
             // Bail out if we can't move there and we can't bash.
-            if( !pathed && !can_move_to( settings, candidate ) ) {
+            if( !pathed && !can_move_to( candidate, settings ) ) {
                 if( !can_bash ) {
                     continue;
                 }
@@ -1550,12 +1547,12 @@ tripoint monster::scent_move()
         }
     }
 
-    const CreaturePathfindingSettings settings = get_pathfinding_settings();
+    const PathfindingSettings settings = get_pathfinding_settings();
     for( const tripoint &direction : sdirection ) {
         // Add some randomness to make creatures zigzag towards the source
         for( const tripoint &dest : here.points_in_radius( direction, 1 ) ) {
             if( here.valid_move( pos(), dest, can_bash, true ) &&
-                ( can_move_to( settings, dest ) || ( dest == player_character.pos() ) ||
+                ( can_move_to( dest, settings ) || ( dest == player_character.pos() ) ||
                   ( can_bash && here.bash_rating( bash_estimate(), dest ) > 0 ) ) ) {
                 smoves.push_back( dest );
             }
@@ -2249,10 +2246,10 @@ void monster::stumble()
     }
 
     creature_tracker &creatures = get_creature_tracker();
-    const CreaturePathfindingSettings settings = get_pathfinding_settings();
+    const PathfindingSettings settings = get_pathfinding_settings();
     while( !valid_stumbles.empty() && !is_dead() ) {
         const tripoint dest = random_entry_removed( valid_stumbles );
-        if( can_move_to( settings, dest ) &&
+        if( can_move_to( dest, settings ) &&
             //Stop zombies and other non-breathing monsters wandering INTO water
             //(Unless they can swim/are aquatic)
             //But let them wander OUT of water if they are there.

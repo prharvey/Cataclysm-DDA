@@ -147,7 +147,7 @@ bool leap_actor::call( monster &z ) const
                    target.x, target.y, target.z );
 
     std::multimap<int, tripoint> candidates;
-    const CreaturePathfindingSettings settings = z.get_pathfinding_settings();
+    const PathfindingSettings settings = z.get_pathfinding_settings();
     for( const tripoint &candidate : here.points_in_radius( z.pos(), max_range ) ) {
         if( candidate == z.pos() ) {
             add_msg_debug( debugmode::DF_MATTACK, "Monster at coordinates %d,%d,%d",
@@ -170,7 +170,7 @@ bool leap_actor::call( monster &z ) const
                            "Candidate farther from target than optimal path, discarded" );
             continue;
         }
-        if( !ignore_dest_terrain && !z.can_move_to( settings, candidate ) ) {
+        if( !ignore_dest_terrain && !z.can_move_to( candidate, settings ) ) {
             add_msg_debug( debugmode::DF_MATTACK,
                            "Candidate place it can't enter, discarded" );
             continue;
@@ -590,7 +590,7 @@ int melee_actor::do_grab( monster &z, Creature *target, bodypart_id bp_id ) cons
     // Drag stuff
     if( grab_data.drag_distance > 0 ) {
         int distance = grab_data.drag_distance;
-        const CreaturePathfindingSettings settings = z.get_pathfinding_settings();
+        const PathfindingSettings settings = z.get_pathfinding_settings();
         while( distance > 0 ) {
             // Start with the opposite square
             tripoint opposite_square = z.pos() - ( target->pos() - z.pos() );
@@ -616,7 +616,7 @@ int melee_actor::do_grab( monster &z, Creature *target, bodypart_id bp_id ) cons
             std::set<tripoint>::iterator intersect_iter = intersect.begin();
             std::advance( intersect_iter, rng( 0, intersect.size() - 1 ) );
             tripoint target_square = random_entry<std::set<tripoint>>( intersect );
-            if( z.can_move_to( settings, target_square ) ) {
+            if( z.can_move_to( target_square, settings ) ) {
                 monster *zz = target->as_monster();
                 tripoint zpt = z.pos();
                 z.move_to( target_square, false, false, grab_data.drag_movecost_mod );
