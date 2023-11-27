@@ -513,7 +513,7 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet>::find_path(
         const auto [_, index] = frontier.top();
         frontier.pop();
 
-        const auto [current_cost, current_state, _] = history_[index];
+        const auto [current_cost, current_state, _2] = history_[index];
 
         if( visited_.count( current_state ) == 1 ) {
             continue;
