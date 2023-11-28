@@ -10,7 +10,7 @@
 
 class map;
 
-template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename BestStateMap = std::unordered_map<State, std::pair<Cost, State>>>
+template <typename State, typename Cost = int, typename BestStateMap = std::unordered_map<State, std::pair<Cost, State>>>
           class AStarPathfinder
 {
 public:
@@ -20,9 +20,6 @@ public:
                                   CostFn cost_fn, HeuristicFn heuristic_fn );
 
 private:
-    using StorageNode = std::tuple<Cost, State, int>;
-
-    VisitedSet visited_;
     BestStateMap best_state_;
 };
 
@@ -215,10 +212,18 @@ class RealityBubblePathfindingSettings
             max_cost_ = v;
         }
 
+        PathfindingFlags &avoid_mask() {
+            return avoid_mask_;
+        }
+        const PathfindingFlags &avoid_mask() const {
+            return avoid_mask_;
+        }
+
     private:
         bool allow_flying_ = false;
         bool allow_stairways_ = false;
         int max_cost_ = 0;
+        PathfindingFlags avoid_mask_ = PathfindingFlag::Air | PathfindingFlag::Impassable;
 };
 
 class RealityBubblePathfinder
@@ -248,11 +253,24 @@ class RealityBubblePathfinder
         };
 
         struct FastBestStateMap {
+            std::pair<std::pair<int, tripoint_bub_ms>*, bool> emplace( const tripoint_bub_ms &child,
+                    const std::pair<int, tripoint_bub_ms> &pair ) {
+                std::pair<int, tripoint_bub_ms> &result = best_states[child.z() +
+                        OVERMAP_DEPTH][child.y()][child.x()];
+                if( in.emplace( child ) ) {
+                    result = pair;
+                    return std::make_pair( &result, true );
+                }
+                return std::make_pair( &result, false );
+            }
+
             void clear() {
                 in.clear();
             }
 
-            std::pair<int, tripoint_bub_ms> &operator[]( const tripoint_bub_ms &child );
+            std::pair<int, tripoint_bub_ms> &operator[]( const tripoint_bub_ms &child ) {
+                return *emplace( child, std::make_pair( 0, child ) ).first;
+            }
 
             FastVisitedSet in;
             RealityBubbleArray<std::pair<int, tripoint_bub_ms>> best_states;
@@ -264,7 +282,7 @@ class RealityBubblePathfinder
         }
 
         RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<tripoint_bub_ms, int, FastVisitedSet, FastBestStateMap> astar_;
+        AStarPathfinder<tripoint_bub_ms, int, FastBestStateMap> astar_;
 };
 
 class PathfindingSettings
@@ -447,7 +465,7 @@ class PathfindingSettings
         }
 
         PathfindingFlags avoid_mask() const {
-            return avoid_mask_;
+            return rb_settings_.avoid_mask();
         }
 
         int bash_strength() const {
@@ -468,13 +486,13 @@ class PathfindingSettings
 
     private:
         bool is_set( PathfindingFlags flag ) const {
-            return avoid_mask_.is_set( flag );
+            return rb_settings_.avoid_mask().is_set( flag );
         }
         void set( PathfindingFlags flags, bool v ) {
             if( v ) {
-                avoid_mask_.set_union( flags );
+                rb_settings_.avoid_mask().set_union( flags );
             } else {
-                avoid_mask_.set_clear( flags );
+                rb_settings_.avoid_mask().set_clear( flags );
             }
         }
 
@@ -485,7 +503,6 @@ class PathfindingSettings
         }
 
         int max_distance_ = 0;
-        int max_cost_ = 0;
 
         int bash_strength_ = 0;
 
@@ -501,7 +518,6 @@ class PathfindingSettings
         bool avoid_unlocking_doors_ = false;
         std::function<bool( const field_type_id & )> maybe_avoid_dangerous_fields_fn_;
         std::function<bool( const tripoint_bub_ms & )> maybe_avoid_fn_;
-        PathfindingFlags avoid_mask_ = PathfindingFlag::Air | PathfindingFlag::Impassable;
 };
 
 // Implementation Details
@@ -513,9 +529,9 @@ struct FirstElementGreaterThan {
     }
 };
 
-template <typename State, typename Cost, typename VisitedSet, typename BestStateMap>
+template <typename State, typename Cost, typename BestStateMap>
 template <typename NeighborsFn, typename CostFn, typename HeuristicFn>
-std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_path(
+std::vector<State> AStarPathfinder<State, Cost, BestStateMap>::find_path(
     const Cost &max_cost, const State &from, const State &to, NeighborsFn neighbors_fn, CostFn cost_fn,
     HeuristicFn heuristic_fn )
 {
@@ -523,9 +539,9 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
     std::priority_queue< FrontierNode, std::vector< FrontierNode>, FirstElementGreaterThan> frontier;
     std::vector<State> result;
 
-    visited_.clear();
     best_state_.clear();
 
+    best_state_.emplace( from, std::make_pair( 0, from ) );
     frontier.emplace( heuristic_fn( from ), from );
     do {
         auto [estimated_cost, current_state] = frontier.top();
@@ -535,11 +551,15 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
             break;
         }
 
-        if( visited_.count( current_state ) == 1 ) {
+        auto& [best_cost, _] = best_state_[current_state];
+
+        if( best_cost < 0 ) {
             continue;
         }
 
-        visited_.emplace( current_state );
+        const Cost current_cost = best_cost;
+        // Use negative costs to mark visited nodes.
+        best_cost = -1;
 
         if( current_state == to ) {
             while( current_state != from ) {
@@ -550,19 +570,23 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
             break;
         }
 
-        const Cost current_cost = best_state_[current_state].first;
         neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state,
-              current_cost]( const State & neighbour ) {
-            if( visited_.count( neighbour ) == 0 ) {
-                if( const std::optional<Cost> transition_cost = cost_fn( current_state, neighbour ) ) {
-                    const Cost new_cost = current_cost + *transition_cost;
-                    auto& [cost, parent] = best_state_[neighbour];
-                    if( cost == 0 || new_cost < cost ) {
-                        cost = new_cost;
-                        parent = current_state;
-                        const Cost estimated_cost = new_cost + heuristic_fn( neighbour );
-                        frontier.emplace( estimated_cost, neighbour );
-                    }
+              current_cost]( const State & neighbour ) __declspec( noinline ) {
+            const auto& [iter, _] = best_state_.emplace( neighbour,
+                                    std::make_pair( std::numeric_limits<Cost>::max(), tripoint_bub_ms() ) );
+            auto& [best_cost, parent] = *iter;
+            if( current_cost >= best_cost ) {
+                // Can't possibly do better than we've already seen, no matter what the cost
+                // function says.
+                return;
+            }
+            if( const std::optional<Cost> transition_cost = cost_fn( current_state, neighbour ) ) {
+                const Cost new_cost = current_cost + *transition_cost;
+                if( new_cost < best_cost ) {
+                    best_cost = new_cost;
+                    parent = current_state;
+                    const Cost estimated_cost = new_cost + heuristic_fn( neighbour );
+                    frontier.emplace( estimated_cost, neighbour );
                 }
             }
         } );
@@ -589,6 +613,7 @@ inline std::size_t RealityBubblePathfinder::FastVisitedSet::count( const tripoin
     return test < in.size() && in[test] == i;
 }
 
+/*
 inline std::pair<int, tripoint_bub_ms> &RealityBubblePathfinder::FastBestStateMap::operator[](
     const tripoint_bub_ms &child )
 {
@@ -598,7 +623,7 @@ inline std::pair<int, tripoint_bub_ms> &RealityBubblePathfinder::FastBestStateMa
         result.first = 0;
     }
     return result;
-}
+}*/
 
 template <typename CostFn, typename HeuristicFn>
 std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
@@ -618,6 +643,8 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         const int min_y = std::max( cy - 1, 0 );
         const int max_y = std::min( cy + 1, MAPSIZE_Y - 1 );
 
+        const PathfindingFlags avoid = settings.avoid_mask();
+
         if( settings.allow_flying() ) {
             for( int z = std::max( cz - 1, -OVERMAP_DEPTH ); z <= std::min( cz + 1, OVERMAP_HEIGHT ); ++z ) {
                 for( int y = min_y; y <= max_y; ++y ) {
@@ -626,6 +653,9 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                             continue;
                         }
                         const tripoint_bub_ms next( x, y, z );
+                        if( cache_->flags( next ) & avoid ) {
+                            continue;
+                        }
                         emit_fn( next );
                     }
                 }
@@ -648,6 +678,9 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                     continue;
                 }
                 const tripoint_bub_ms next( x, y, cz );
+                if( cache_->flags( next ) & avoid ) {
+                    continue;
+                }
                 emit_fn( next );
             }
         }
@@ -667,6 +700,9 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                         continue;
                     }
                     const tripoint_bub_ms above( x, y, cz + 1 );
+                    if( cache_->flags( above ) & avoid ) {
+                        continue;
+                    }
                     emit_fn( above );
                 }
             }
@@ -678,6 +714,9 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
                         continue;
                     }
                     const tripoint_bub_ms below( x, y, cz - 1 );
+                    if( cache_->flags( below ) & avoid ) {
+                        continue;
+                    }
                     emit_fn( below );
                 }
             }
