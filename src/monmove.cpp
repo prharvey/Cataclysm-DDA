@@ -268,7 +268,13 @@ PathfindingSettings monster::get_pathfinding_settings() const
 
 bool monster::can_move_to( const tripoint &p, const PathfindingSettings &settings ) const
 {
-    return get_map().can_move( pos_bub(), tripoint_bub_ms( p ), settings );
+    const map &here = get_map();
+    const tripoint_bub_ms &from = pos_bub();
+    if( here.inbounds( from ) ) {
+        return here.can_move( from, tripoint_bub_ms( p ), settings );
+    } else {
+        return here.can_teleport( tripoint_bub_ms( p ), settings );
+    }
 }
 
 float monster::rate_target( Creature &c, float best, bool smart ) const

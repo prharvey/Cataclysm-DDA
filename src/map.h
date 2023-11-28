@@ -668,6 +668,7 @@ class map
                                             const pathfinding_settings &settings,
         const std::set<tripoint> &pre_closed = {{ }} ) const;
 
+        bool can_teleport( const tripoint_bub_ms &t, const PathfindingSettings &settings ) const;
         bool can_move( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
                        const PathfindingSettings &settings ) const;
         std::optional<int> move_cost( const tripoint_bub_ms &f, const tripoint_bub_ms &t,

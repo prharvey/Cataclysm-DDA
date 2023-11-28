@@ -36,15 +36,15 @@ RealityBubblePathfindingCache::RealityBubblePathfindingCache()
 // Modifies `t` to point to a tile with `flag` in a 1-submap radius of `t`'s original value, searching
 // nearest points first (starting with `t` itself).
 // Returns false if it could not find a suitable point
-bool RealityBubblePathfindingCache::vertical_move_destination( ter_furn_flag flag,
+bool RealityBubblePathfindingCache::vertical_move_destination( const map &here, ter_furn_flag flag,
         tripoint &t ) const
 {
     const int z = t.z;
-    if( const std::optional<point> p = find_point_closest_first( t.xy(), 0, SEEX, [this, flag,
+    if( const std::optional<point> p = find_point_closest_first( t.xy(), 0, SEEX, [this, &here, flag,
           z]( const point & p ) {
     if( p.x >= 0 && p.x < MAPSIZE_X && p.y >= 0 && p.y < MAPSIZE_Y ) {
             const tripoint t2( p, z );
-            return get_map().has_flag( flag, t2 );
+            return here.has_flag( flag, t2 );
         }
         return false;
     } ) ) {
@@ -117,6 +117,10 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
         flags |= PathfindingFlag::HardGround;
     }
 
+    if( veh ) {
+        flags |= PathfindingFlag::Vehicle;
+    }
+
     if( cost == 0 ) {
         flags |= PathfindingFlag::Obstacle;
 
@@ -135,6 +139,27 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
             if( terrain.has_flag( ter_furn_flag::TFLAG_OPENCLOSE_INSIDE ) ||
                 furniture.has_flag( ter_furn_flag::TFLAG_OPENCLOSE_INSIDE ) ) {
                 flags |= PathfindingFlag::InsideDoor;
+            }
+        }
+
+        if( veh ) {
+            if( const auto vpobst = veh->obstacle_at_part() ) {
+                const int vpobst_i = vpobst->part_index();
+                const vehicle &v = veh->vehicle();
+                const int open_inside = v.next_part_to_open( vpobst_i, false );
+                if( open_inside != -1 ) {
+                    impassable = false;
+                    flags |= PathfindingFlag::Door;
+
+                    const int open_outside = v.next_part_to_open( vpobst_i, true );
+                    if( open_inside != open_outside ) {
+                        flags |= PathfindingFlag::InsideDoor;
+                    }
+                    const int lock = v.next_part_to_unlock( vpobst_i, false );
+                    if( lock != -1 ) {
+                        flags |= PathfindingFlag::LockedDoor;
+                    }
+                }
             }
         }
 
@@ -191,28 +216,6 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
         flags |= PathfindingFlag::Unsheltered;
     }
 
-    if( veh ) {
-        flags |= PathfindingFlag::Vehicle;
-
-        if( const auto vpobst = veh->obstacle_at_part() ) {
-            const int vpobst_i = vpobst->part_index();
-            const vehicle &v = veh->vehicle();
-            const int open_inside = v.next_part_to_open( vpobst_i, false );
-            if( open_inside != -1 ) {
-                flags |= PathfindingFlag::Door;
-
-                const int open_outside = v.next_part_to_open( vpobst_i, true );
-                if( open_inside != open_outside ) {
-                    flags |= PathfindingFlag::InsideDoor;
-                }
-                const int lock = v.next_part_to_unlock( vpobst_i, false );
-                if( lock != -1 ) {
-                    flags |= PathfindingFlag::LockedDoor;
-                }
-            }
-        }
-    }
-
     for( const auto &fld : tile.get_field() ) {
         const field_entry &cur = fld.second;
         if( cur.is_dangerous() ) {
@@ -222,16 +225,16 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
     }
 
     if( p.z() < OVERMAP_HEIGHT ) {
-        up_stair_destinations_.erase( p );
+        up_destinations_.erase( p );
         const tripoint_bub_ms up( p.xy(), p.z() + 1 );
         if( terrain.has_flag( ter_furn_flag::TFLAG_GOES_UP ) ) {
             bool rope_ladder = false;
-            if( std::optional<tripoint> dest = g->find_or_make_stairs( get_map(),
+            if( std::optional<tripoint> dest = g->find_or_make_stairs( here,
                                                p.z() - 1, rope_ladder, false, p.raw() ) ) {
-                if( vertical_move_destination( ter_furn_flag::TFLAG_GOES_DOWN, *dest ) ) {
+                if( vertical_move_destination( here, ter_furn_flag::TFLAG_GOES_DOWN, *dest ) ) {
                     tripoint_bub_ms d( *dest );
                     flags |= PathfindingFlag::GoesUp;
-                    up_stair_destinations_.emplace( p, d );
+                    up_destinations_.emplace( p, d );
                     dependants_by_position_[d].push_back( p );
                 }
             } else {
@@ -243,25 +246,25 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
             terrain.has_flag( ter_furn_flag::TFLAG_RAMP_UP ) ) {
             dependants_by_position_[up].push_back( p );
             if( ( terrain.has_flag( ter_furn_flag::TFLAG_RAMP ) &&
-                  get_map().valid_move( p.raw(), up.raw(), false, true, true ) ) ||
+                  here.valid_move( p.raw(), up.raw(), false, true, true ) ) ||
                 ( terrain.has_flag( ter_furn_flag::TFLAG_RAMP_UP ) &&
-                  get_map().valid_move( p.raw(), up.raw(), false, true ) ) ) {
+                  here.valid_move( p.raw(), up.raw(), false, true ) ) ) {
                 flags |= PathfindingFlag::RampUp;
             }
         }
     }
 
     if( p.z() > -OVERMAP_DEPTH ) {
-        down_stair_destinations_.erase( p );
+        down_destinations_.erase( p );
         const tripoint_bub_ms down( p.xy(), p.z() - 1 );
         if( terrain.has_flag( ter_furn_flag::TFLAG_GOES_DOWN ) ) {
             bool rope_ladder = false;
-            if( std::optional<tripoint> dest = g->find_or_make_stairs( get_map(),
+            if( std::optional<tripoint> dest = g->find_or_make_stairs( here,
                                                p.z(), rope_ladder, false, p.raw() ) ) {
-                if( vertical_move_destination( ter_furn_flag::TFLAG_GOES_UP, *dest ) ) {
+                if( vertical_move_destination( here, ter_furn_flag::TFLAG_GOES_UP, *dest ) ) {
                     tripoint_bub_ms d( *dest );
                     flags |= PathfindingFlag::GoesDown;
-                    down_stair_destinations_.emplace( p, d );
+                    down_destinations_.emplace( p, d );
                     dependants_by_position_[d].push_back( p );
                 }
             } else {
@@ -271,7 +274,7 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
 
         if( terrain.has_flag( ter_furn_flag::TFLAG_RAMP_DOWN ) ) {
             dependants_by_position_[down].push_back( p );
-            if( get_map().valid_move( p.raw(), down.raw(), false, true, true ) ) {
+            if( here.valid_move( p.raw(), down.raw(), false, true, true ) ) {
                 flags |= PathfindingFlag::RampDown;
             }
         }
@@ -297,15 +300,26 @@ int PathfindingSettings::bash_rating_from_range( int min, int max ) const
 namespace
 {
 
-std::optional<int> pathfinding_move_cost_internal( const map& here, const tripoint_bub_ms& from, const tripoint_bub_ms& to, const PathfindingSettings &settings, const RealityBubblePathfindingCache &cache)
+std::optional<int> pathfinding_move_cost_internal( const map &here, const tripoint_bub_ms &from,
+        const tripoint_bub_ms &to, const PathfindingSettings &settings,
+        const RealityBubblePathfindingCache &cache )
 {
     const PathfindingFlags flags = cache.flags( to );
     if( flags & settings.avoid_mask() ) {
         return std::nullopt;
     }
 
+    const PathfindingFlags from_flags = cache.flags( from );
+    const bool is_falling = from_flags.is_set( PathfindingFlag::Air ) && !settings.is_flying();
+    if( is_falling ) {
+        // Can only fall straight down.
+        if( from.z() < to.z() || from.xy() != to.xy() ) {
+            return std::nullopt;
+        }
+    }
+
     const bool is_vertical_movement = from.z() != to.z();
-    if( is_vertical_movement ) {
+    if( !is_falling && is_vertical_movement ) {
         const tripoint_bub_ms &upper = from.z() > to.z() ? from : to;
         const tripoint_bub_ms &lower = from.z() < to.z() ? from : to;
         if( cache.flags( lower ).is_set( PathfindingFlag::GoesUp ) &&
@@ -320,12 +334,9 @@ std::optional<int> pathfinding_move_cost_internal( const map& here, const tripoi
                    cache.flags( above_lower ).is_set( PathfindingFlag::Air ) ) ) {
                 return std::nullopt;
             }
-        } else {
-            const PathfindingFlags from_flags = cache.flags( from );
-            if( !( from.z() < to.z() && from_flags.is_set( PathfindingFlag::RampUp ) ) ||
-                !( from.z() > to.z() && from_flags.is_set( PathfindingFlag::RampDown ) ) ) {
-                return std::nullopt;
-            }
+        } else if( !( from.z() < to.z() && from_flags.is_set( PathfindingFlag::RampUp ) ) ||
+                   !( from.z() > to.z() && from_flags.is_set( PathfindingFlag::RampDown ) ) ) {
+            return std::nullopt;
         }
     }
 
@@ -399,6 +410,12 @@ std::optional<int> pathfinding_move_cost_internal( const map& here, const tripoi
 
 }  // namespace
 
+bool map::can_teleport( const tripoint_bub_ms &to, const PathfindingSettings &settings ) const
+{
+    pathfinding_cache_->update( *this );
+    return pathfinding_move_cost_internal( *this, to, to, settings, *pathfinding_cache_ ).has_value();
+}
+
 bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
                     const PathfindingSettings &settings ) const
 {
@@ -416,19 +433,19 @@ std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_b
         return 0;
     }
     pathfinding_cache_->update( *this );
-    return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_);
+    return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ );
 }
 
 std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
         const PathfindingSettings &settings ) const
 {
-    if( from == to ) {
+    if( from == to || !inbounds(from) || !inbounds(to) ) {
         return {};
     }
     pathfinding_cache_->update( *this );
     return pathfinder_->find_path( settings.rb_settings(), from, to,
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_);
+        return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ );
     },
     [to]( const tripoint_bub_ms & from ) {
         return 100 * rl_dist( from, to );

@@ -337,6 +337,7 @@ void map::invalidate_map_cache( const int zlev )
         ch.seen_cache_dirty = true;
         ch.outside_cache_dirty = true;
         set_transparency_cache_dirty( zlev );
+        set_pathfinding_cache_dirty( zlev );
     }
 }
 
