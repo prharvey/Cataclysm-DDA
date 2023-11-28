@@ -300,6 +300,17 @@ int PathfindingSettings::bash_rating_from_range( int min, int max ) const
 namespace
 {
 
+float octile_distance( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
+{
+    std::array<int, 3> ds = { std::abs( from.x() - to.x() ), std::abs( from.y() - to.y() ), std::abs( from.z() - to.z() ) };
+    std::sort( std::begin( ds ), std::end( ds ) );
+
+    constexpr float one_axis = 1.0f;
+    constexpr float two_axis = 1.4142f;
+    constexpr float three_axis = 1.73205f;
+    return ( three_axis - two_axis ) * ds[0] + ( two_axis - one_axis ) * ds[1] + one_axis * ds[2];
+}
+
 std::optional<int> pathfinding_move_cost_internal( const map &here, const tripoint_bub_ms &from,
         const tripoint_bub_ms &to, const PathfindingSettings &settings,
         const RealityBubblePathfindingCache &cache )
@@ -399,13 +410,14 @@ std::optional<int> pathfinding_move_cost_internal( const map &here, const tripoi
     }
 
     // TODO: Move the move cost cache into map so this logic isn't duplicated.
-    static constexpr std::array<int, 4> mults = { 0, 50, 71, 100 };
+    //static constexpr std::array<int, 4> mults = { 0, 50, 71, 100 };
     // Multiply cost depending on the number of differing axes
     // 0 if all axes are equal, 100% if only 1 differs, 141% for 2, 200% for 3
-    const std::size_t match = trigdist ? ( from.x() != to.x() ) + ( from.y() != to.y() ) +
-                              is_vertical_movement : 1;
+    /*const std::size_t match = trigdist ? (from.x() != to.x()) + (from.y() != to.y()) +
+                              is_vertical_movement : 1;*/
+    const int mult = octile_distance( from, to ) * 50;
     const int cost = cache.move_cost( from ) + cache.move_cost( to );
-    return cost * mults[match] / 2 + extra_cost * 50;
+    return mult * cost / 2 + extra_cost * 50;
 }
 
 }  // namespace
@@ -439,16 +451,49 @@ std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_b
 std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
         const PathfindingSettings &settings ) const
 {
-    if( from == to || !inbounds(from) || !inbounds(to) ) {
+    if( from == to || !inbounds( from ) || !inbounds( to ) ) {
         return {};
     }
     pathfinding_cache_->update( *this );
+
+    // First, check for a simple straight line on flat ground
+    // Except when the line contains a pre-closed tile - we need to do regular pathing then
+    if( from.z() == to.z() ) {
+        std::vector<tripoint_bub_ms> line_path = line_to( from, to );
+        const PathfindingFlags avoid = settings.avoid_mask() | PathfindingFlag::Obstacle;
+        // Check all points for all fast avoidance.
+        if( !std::any_of( line_path.begin(), line_path.end(), [this, avoid]( const tripoint_bub_ms & p ) {
+        return pathfinding_cache_->flags( p ) & avoid;
+        } ) ) {
+            // Now do the slow check.
+            if( pathfinding_move_cost_internal( *this, from, line_path[0], settings,
+                                                *pathfinding_cache_ ).has_value() ) {
+                bool good = true;
+                for( int i = 1; i < line_path.size(); ++i ) {
+                    if( !pathfinding_move_cost_internal( *this, line_path[i - 1], line_path[i], settings,
+                                                         *pathfinding_cache_ ).has_value() ) {
+                        good = false;
+                        break;
+                    }
+                }
+                if( good ) {
+                    return line_path;
+                }
+            }
+        }
+    }
+
+    // If expected path length is greater than max distance, allow only line path, like above
+    if( octile_distance( from, to ) > settings.max_distance() ) {
+        return {};
+    }
+
     return pathfinder_->find_path( settings.rb_settings(), from, to,
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
         return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ );
     },
     [to]( const tripoint_bub_ms & from ) {
-        return 100 * rl_dist( from, to );
+        return 100 * octile_distance( from, to );
     } );
 }
 
