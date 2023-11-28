@@ -552,7 +552,7 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
 
         const Cost current_cost = best_state_[current_state].first;
         neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state,
-              current_cost]( const State & neighbour ) __declspec( noinline ) {
+              current_cost]( const State & neighbour ) {
             if( visited_.count( neighbour ) == 0 ) {
                 if( const std::optional<Cost> transition_cost = cost_fn( current_state, neighbour ) ) {
                     const Cost new_cost = current_cost + *transition_cost;
@@ -612,10 +612,16 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         const int cy = current.y();
         const int cz = current.z();
 
+        const int min_x = std::max( cx - 1, 0 );
+        const int max_x = std::min( cx + 1, MAPSIZE_X - 1 );
+
+        const int min_y = std::max( cy - 1, 0 );
+        const int max_y = std::min( cy + 1, MAPSIZE_Y - 1 );
+
         if( settings.allow_flying() ) {
             for( int z = std::max( cz - 1, -OVERMAP_DEPTH ); z <= std::min( cz + 1, OVERMAP_HEIGHT ); ++z ) {
-                for( int y = std::max( cy - 1, 0 ); y < std::min( cy + 2, MAPSIZE_Y ); ++y ) {
-                    for( int x = std::max( cx - 1, 0 ); x < std::min( cx + 2, MAPSIZE_X ); ++x ) {
+                for( int y = min_y; y <= max_y; ++y ) {
+                    for( int x = min_x; x <= max_x; ++x ) {
                         if( x == cx && y == cy && z == cz ) {
                             continue;
                         }
@@ -636,8 +642,8 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
             return;
         }
 
-        for( int y = std::max( cy - 1, 0 ); y < std::min( cy + 2, MAPSIZE_Y ); ++y ) {
-            for( int x = std::max( cx - 1, 0 ); x < std::min( cx + 2, MAPSIZE_X ); ++x ) {
+        for( int y = min_y; y <= max_y; ++y ) {
+            for( int x = min_x; x <= max_x; ++x ) {
                 if( x == cx && y == cy ) {
                     continue;
                 }
@@ -655,8 +661,8 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
             }
         }
         if( flags.is_set( PathfindingFlag::RampUp ) ) {
-            for( int y = std::max( cy - 1, 0 ); y < std::min( cy + 2, MAPSIZE_Y ); ++y ) {
-                for( int x = std::max( cx - 1, 0 ); x < std::min( cx + 2, MAPSIZE_X ); ++x ) {
+            for( int y = min_y; y <= max_y; ++y ) {
+                for( int x = min_x; x <= max_x; ++x ) {
                     if( x == cx && y == cy ) {
                         continue;
                     }
@@ -666,8 +672,8 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
             }
         }
         if( flags.is_set( PathfindingFlag::RampDown ) ) {
-            for( int y = std::max( cy - 1, 0 ); y < std::min( cy + 2, MAPSIZE_Y ); ++y ) {
-                for( int x = std::max( cx - 1, 0 ); x < std::min( cx + 2, MAPSIZE_X ); ++x ) {
+            for( int y = min_y; y <= max_y; ++y ) {
+                for( int x = min_x; x <= max_x; ++x ) {
                     if( x == cx && y == cy ) {
                         continue;
                     }

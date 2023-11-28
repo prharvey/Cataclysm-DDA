@@ -302,13 +302,17 @@ namespace
 
 float octile_distance( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
 {
-    std::array<int, 3> ds = { std::abs( from.x() - to.x() ), std::abs( from.y() - to.y() ), std::abs( from.z() - to.z() ) };
-    std::sort( std::begin( ds ), std::end( ds ) );
+    const int dx = std::abs( from.x() - to.x() );
+    const int dy = std::abs( from.y() - to.y() );
+    const int dz = std::abs( from.z() - to.z() );
+    const int min = std::min( dx, std::min( dy, dz ) );
+    const int max = std::max( dx, std::max( dy, dz ) );
+    const int mid = dx + dy + dz - min - max;
 
     constexpr float one_axis = 1.0f;
     constexpr float two_axis = 1.4142f;
     constexpr float three_axis = 1.73205f;
-    return ( three_axis - two_axis ) * ds[0] + ( two_axis - one_axis ) * ds[1] + one_axis * ds[2];
+    return ( three_axis - two_axis ) * min + ( two_axis - one_axis ) * mid + one_axis * max;
 }
 
 std::optional<int> pathfinding_move_cost_internal( const map &here, const tripoint_bub_ms &from,
