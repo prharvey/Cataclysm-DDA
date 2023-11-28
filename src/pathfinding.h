@@ -10,7 +10,7 @@
 
 class map;
 
-template <typename State, typename Cost = int, typename BestStateMap = std::unordered_map<State, std::pair<Cost, State>>>
+template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename BestStateMap = std::unordered_map<State, std::pair<Cost, State>>>
           class AStarPathfinder
 {
 public:
@@ -20,6 +20,7 @@ public:
                                   CostFn cost_fn, HeuristicFn heuristic_fn );
 
 private:
+    VisitedSet visited_;
     BestStateMap best_state_;
 };
 
@@ -253,12 +254,13 @@ class RealityBubblePathfinder
         };
 
         struct FastBestStateMap {
-            std::pair<std::pair<int, tripoint_bub_ms>*, bool> emplace( const tripoint_bub_ms &child,
-                    const std::pair<int, tripoint_bub_ms> &pair ) {
+            std::pair<std::pair<int, tripoint_bub_ms>*, bool> try_emplace( const tripoint_bub_ms &child,
+                    int cost, const tripoint_bub_ms &parent ) {
                 std::pair<int, tripoint_bub_ms> &result = best_states[child.z() +
                         OVERMAP_DEPTH][child.y()][child.x()];
                 if( in.emplace( child ) ) {
-                    result = pair;
+                    result.first = cost;
+                    result.second = parent;
                     return std::make_pair( &result, true );
                 }
                 return std::make_pair( &result, false );
@@ -269,7 +271,7 @@ class RealityBubblePathfinder
             }
 
             std::pair<int, tripoint_bub_ms> &operator[]( const tripoint_bub_ms &child ) {
-                return *emplace( child, std::make_pair( 0, child ) ).first;
+                return *try_emplace( child, 0, child ).first;
             }
 
             FastVisitedSet in;
@@ -282,7 +284,7 @@ class RealityBubblePathfinder
         }
 
         RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<tripoint_bub_ms, int, FastBestStateMap> astar_;
+        AStarPathfinder<tripoint_bub_ms, int, FastVisitedSet, FastBestStateMap> astar_;
 };
 
 class PathfindingSettings
@@ -529,9 +531,9 @@ struct FirstElementGreaterThan {
     }
 };
 
-template <typename State, typename Cost, typename BestStateMap>
+template <typename State, typename Cost, typename VisitedSet, typename BestStateMap>
 template <typename NeighborsFn, typename CostFn, typename HeuristicFn>
-std::vector<State> AStarPathfinder<State, Cost, BestStateMap>::find_path(
+std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_path(
     const Cost &max_cost, const State &from, const State &to, NeighborsFn neighbors_fn, CostFn cost_fn,
     HeuristicFn heuristic_fn )
 {
@@ -539,9 +541,10 @@ std::vector<State> AStarPathfinder<State, Cost, BestStateMap>::find_path(
     std::priority_queue< FrontierNode, std::vector< FrontierNode>, FirstElementGreaterThan> frontier;
     std::vector<State> result;
 
+    visited_.clear();
     best_state_.clear();
 
-    best_state_.emplace( from, std::make_pair( 0, from ) );
+    best_state_.try_emplace( from, 0, from );
     frontier.emplace( heuristic_fn( from ), from );
     do {
         auto [estimated_cost, current_state] = frontier.top();
@@ -551,15 +554,9 @@ std::vector<State> AStarPathfinder<State, Cost, BestStateMap>::find_path(
             break;
         }
 
-        auto& [best_cost, _] = best_state_[current_state];
-
-        if( best_cost < 0 ) {
+        if( !visited_.emplace( current_state ) ) {
             continue;
         }
-
-        const Cost current_cost = best_cost;
-        // Use negative costs to mark visited nodes.
-        best_cost = -1;
 
         if( current_state == to ) {
             while( current_state != from ) {
@@ -570,18 +567,22 @@ std::vector<State> AStarPathfinder<State, Cost, BestStateMap>::find_path(
             break;
         }
 
+        const Cost current_cost = best_state_[current_state].first;
         neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state,
               current_cost]( const State & neighbour ) __declspec( noinline ) {
-            const auto& [iter, _] = best_state_.emplace( neighbour,
-                                    std::make_pair( std::numeric_limits<Cost>::max(), tripoint_bub_ms() ) );
-            auto& [best_cost, parent] = *iter;
-            if( current_cost >= best_cost ) {
+            if( visited_.count( neighbour ) == 1 ) {
+                return;
+            }
+            /*if (current_cost >= best_cost) {
                 // Can't possibly do better than we've already seen, no matter what the cost
                 // function says.
                 return;
-            }
+            }*/
             if( const std::optional<Cost> transition_cost = cost_fn( current_state, neighbour ) ) {
                 const Cost new_cost = current_cost + *transition_cost;
+                const auto& [iter, _] = best_state_.try_emplace( neighbour, std::numeric_limits<Cost>::max(),
+                                        State() );
+                auto& [best_cost, parent] = *iter;
                 if( new_cost < best_cost ) {
                     best_cost = new_cost;
                     parent = current_state;
