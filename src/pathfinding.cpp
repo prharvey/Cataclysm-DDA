@@ -105,7 +105,11 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
     const furn_t &furniture = tile.get_furn_t();
     const optional_vpart_position veh = here.veh_at( p );
 
-    const int cost = here.move_cost( p );
+    const int orig_cost = here.move_cost( p );
+    const int cost = orig_cost < 0 ? 0 : orig_cost;
+    if( cost > std::numeric_limits<char>::max() ) {
+        debugmsg( "Tile move cost too large for cache: %s, %d", terrain_id.id().str(), cost );
+    }
     move_cost_ref( p ) = cost;
 
     if( cost > 2 ) {
@@ -419,9 +423,9 @@ std::optional<int> pathfinding_move_cost_internal( const map &here, const tripoi
     // 0 if all axes are equal, 100% if only 1 differs, 141% for 2, 200% for 3
     /*const std::size_t match = trigdist ? (from.x() != to.x()) + (from.y() != to.y()) +
                               is_vertical_movement : 1;*/
-    const int mult = octile_distance( from, to ) * 50;
+    const int mult = octile_distance( from, to ) * 25;
     const int cost = cache.move_cost( from ) + cache.move_cost( to );
-    return mult * cost / 2 + extra_cost * 50;
+    return mult * cost + extra_cost * 50;
 }
 
 }  // namespace

@@ -164,7 +164,7 @@ class RealityBubblePathfindingCache
             return flag_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
         }
 
-        int &move_cost_ref( const tripoint_bub_ms &p ) {
+        char &move_cost_ref( const tripoint_bub_ms &p ) {
             return move_cost_cache_[p.z() + OVERMAP_DEPTH][p.y()][p.x()];
         }
 
@@ -185,7 +185,7 @@ class RealityBubblePathfindingCache
         std::unordered_map<tripoint_bub_ms, tripoint_bub_ms> up_destinations_;
         std::unordered_map<tripoint_bub_ms, tripoint_bub_ms> down_destinations_;
         RealityBubbleArray<PathfindingFlags> flag_cache_;
-        RealityBubbleArray<int> move_cost_cache_;
+        RealityBubbleArray<char> move_cost_cache_;
         RealityBubbleArray<std::pair<int, int>> bash_range_cache_;
 };
 
@@ -240,24 +240,259 @@ class RealityBubblePathfinder
                                                 CostFn cost_fn, HeuristicFn heuristic_fn );
 
     private:
-        struct FastVisitedSet {
-            bool emplace( const tripoint_bub_ms &p );
+        using X = unsigned char;
+        using Y = unsigned char;
+        using Z = char;
+
+        struct PackedTripoint {
+            X x;
+            Y y;
+            Z z;
+
+            PackedTripoint() = default;
+
+            constexpr PackedTripoint( X x, Y y, Z z ) : x( x ), y( y ), z( z ) {}
+
+            constexpr PackedTripoint( const tripoint_bub_ms &p ) : x( p.x() ), y( p.y() ), z( p.z() ) {}
+
+            constexpr operator tripoint_bub_ms() const {
+                return tripoint_bub_ms( static_cast<int>( x ), static_cast<int>( y ), static_cast<int>( z ) );
+            }
+
+            constexpr bool operator==( PackedTripoint other ) const {
+                return x == other.x && y == other.y && z == other.z;
+            }
+
+            constexpr bool operator!=( PackedTripoint other ) const {
+                return !( *this == other );
+            }
+        };
+
+        template <typename T, typename I, I kMax>
+        struct FastIntSet {
+            bool emplace( T p );
 
             void clear() {
                 in.clear();
             }
 
-            std::size_t count( const tripoint_bub_ms &p ) const;
+            auto begin() const {
+                return in.begin();
+            }
 
-            std::vector<int> in;
-            std::array<int, MAPSIZE_X *MAPSIZE_Y *OVERMAP_LAYERS> visited;
+            auto end() const {
+                return in.end();
+            }
+
+            std::size_t count( T p ) const;
+
+            std::vector<T> in;
+            std::array<I, kMax> visited;
+        };
+
+        struct FastTripointSet {
+            static constexpr int get_index( PackedTripoint p ) {
+                constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
+                return ( p.z + OVERMAP_DEPTH ) * layer_size + p.y * MAPSIZE_X + p.x;
+            }
+
+            bool emplace( PackedTripoint p ) {
+                const int i = get_index( p );
+                return in_.emplace( i );
+            }
+
+            void clear() {
+                in_.clear();
+            }
+
+            std::size_t count( PackedTripoint p ) const {
+                const int i = get_index( p );
+                return in_.count( i );
+            }
+
+            FastIntSet<int, std::uint32_t, MAPSIZE_X *MAPSIZE_Y *OVERMAP_LAYERS> in_;
+        };
+
+        struct FastTripointSet2 {
+            static constexpr std::size_t kBits = MAPSIZE_X * MAPSIZE_Y * OVERMAP_LAYERS;
+            static constexpr std::size_t kWords = ( kBits / 64 ) + 1;
+            static constexpr std::uint64_t kBitMask = 64 - 1;
+
+            static constexpr std::uint16_t get_word( std::uint64_t index ) {
+                return index / 64;
+            }
+
+            static constexpr std::uint64_t get_bit( std::uint64_t index ) {
+                return index & kBitMask;
+            }
+
+            static constexpr int get_index( PackedTripoint p ) {
+                constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
+                return ( p.z + OVERMAP_DEPTH ) * layer_size + p.y * MAPSIZE_X + p.x;
+            }
+
+            bool emplace( PackedTripoint p ) {
+                const std::uint64_t i = get_index( p );
+                const std::uint16_t word = get_word( i );
+                if( used_words_.emplace( word ) ) {
+                    words_[word] = 0;
+                }
+                const std::uint64_t bit = get_bit( i );
+                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
+                const bool has_bit = words_[word] & mask;
+                words_[word] |= mask;
+                return !has_bit;
+            }
+
+            void clear() {
+                used_words_.clear();
+            }
+
+            std::size_t count( PackedTripoint p ) const {
+                const std::uint64_t i = get_index( p );
+                const std::uint16_t word = get_word( i );
+                if( used_words_.count( word ) == 1 ) {
+                    const std::uint64_t bit = get_bit( i );
+                    const bool has_bit = words_[word] & ( std::uint64_t{ 1 } << bit );
+                    return has_bit;
+                }
+                return 0;
+            }
+
+            FastIntSet<std::uint16_t, std::uint16_t, kWords> used_words_;
+            std::array<std::uint64_t, kWords> words_;
+        };
+
+        struct FastTripointSet3 {
+            static constexpr std::size_t kBits = MAPSIZE_X * MAPSIZE_Y * OVERMAP_LAYERS;
+            static constexpr std::size_t kWords = ( kBits / 64 ) + 1;
+            static constexpr std::uint64_t kBitMask = 64 - 1;
+
+            static constexpr std::uint16_t get_word( std::uint64_t index ) {
+                return index / 64;
+            }
+
+            static constexpr std::uint64_t get_bit( std::uint64_t index ) {
+                return index & kBitMask;
+            }
+
+            static constexpr int get_index( PackedTripoint p ) {
+                constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
+                return ( p.z + OVERMAP_DEPTH ) * layer_size + p.y * MAPSIZE_X + p.x;
+            }
+
+            bool emplace( PackedTripoint p ) {
+                const std::uint64_t i = get_index( p );
+                const std::uint16_t word = get_word( i );
+                used_words_.emplace( word );
+                const std::uint64_t bit = get_bit( i );
+                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
+                const bool has_bit = words_[word] & mask;
+                words_[word] |= mask;
+                return !has_bit;
+            }
+
+            void clear() {
+                for( std::uint16_t i : used_words_ ) {
+                    words_[i] = 0;
+                }
+                used_words_.clear();
+            }
+
+            std::size_t count( PackedTripoint p ) const {
+                const std::uint64_t i = get_index( p );
+                const std::uint16_t word = get_word( i );
+                const std::uint64_t bit = get_bit( i );
+                const bool has_bit = words_[word] & ( std::uint64_t{ 1 } << bit );
+                return has_bit;
+            }
+
+            FastIntSet<std::uint16_t, std::uint16_t, kWords> used_words_;
+            std::array<std::uint64_t, kWords> words_;
+        };
+
+        struct FastTripointSet4 {
+            static constexpr std::uint64_t kBitMask = 64 - 1;
+
+            static constexpr std::size_t get_word( std::uint64_t index ) {
+                return index / 64;
+            }
+
+            static constexpr std::uint64_t get_bit( std::uint64_t index ) {
+                return index & kBitMask;
+            }
+
+            bool emplace( PackedTripoint p ) {
+                const int z = p.z + OVERMAP_DEPTH;
+                dirty_[z] = true;
+                std::uint64_t &word = words_[z][p.y][get_word( p.x )];
+                const std::uint64_t bit = get_bit( p.x );
+                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
+                const bool has_bit = word & mask;
+                word |= mask;
+                return !has_bit;
+            }
+
+            void clear() {
+                for( int z = 0; z < OVERMAP_HEIGHT; ++z ) {
+                    if( !dirty_[z] ) {
+                        continue;
+                    }
+                    dirty_[z] = false;
+                    for( int y = 0; y < MAPSIZE_Y; ++y ) {
+                        for( int x = 0; x < 3; ++x ) {
+                            words_[z][y][x] = 0;
+                        }
+                    }
+                }
+            }
+
+            std::size_t count( PackedTripoint p ) const {
+                const int z = p.z + OVERMAP_DEPTH;
+                const std::uint64_t word = words_[z][p.y][get_word( p.x )];
+                const std::uint64_t bit = get_bit( p.x );
+                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
+                return word & mask;
+            }
+
+            std::array<bool, OVERMAP_LAYERS> dirty_;
+            std::array<std::array<std::array<std::uint64_t, 3>, MAPSIZE_Y>, OVERMAP_LAYERS> words_;
+        };
+
+        struct FastTripointSet5 {
+            bool emplace( PackedTripoint p ) {
+                const int z = p.z + OVERMAP_DEPTH;
+                dirty_[z] = true;
+                return !std::exchange( is_set_[z][p.y][p.x], true );
+            }
+
+            void clear() {
+                for( int z = 0; z < OVERMAP_HEIGHT; ++z ) {
+                    if( !dirty_[z] ) {
+                        continue;
+                    }
+                    dirty_[z] = false;
+                    for( int y = 0; y < MAPSIZE_Y; ++y ) {
+                        for( int x = 0; x < MAPSIZE_X; ++x ) {
+                            is_set_[z][y][x] = false;
+                        }
+                    }
+                }
+            }
+
+            std::size_t count( PackedTripoint p ) const {
+                return is_set_[p.z + OVERMAP_DEPTH][p.y][p.x];
+            }
+
+            std::array<bool, OVERMAP_LAYERS> dirty_;
+            std::array<std::array<std::array<bool, MAPSIZE_X>, MAPSIZE_Y>, OVERMAP_LAYERS> is_set_;
         };
 
         struct FastBestStateMap {
-            std::pair<std::pair<int, tripoint_bub_ms>*, bool> try_emplace( const tripoint_bub_ms &child,
-                    int cost, const tripoint_bub_ms &parent ) {
-                std::pair<int, tripoint_bub_ms> &result = best_states[child.z() +
-                        OVERMAP_DEPTH][child.y()][child.x()];
+            std::pair<std::pair<int, PackedTripoint>*, bool> try_emplace( PackedTripoint child,
+                    int cost, PackedTripoint parent ) {
+                std::pair<int, PackedTripoint> &result = best_states[child.z +
+                        OVERMAP_DEPTH][child.y][child.x];
                 if( in.emplace( child ) ) {
                     result.first = cost;
                     result.second = parent;
@@ -270,21 +505,16 @@ class RealityBubblePathfinder
                 in.clear();
             }
 
-            std::pair<int, tripoint_bub_ms> &operator[]( const tripoint_bub_ms &child ) {
+            std::pair<int, PackedTripoint> &operator[]( PackedTripoint child ) {
                 return *try_emplace( child, 0, child ).first;
             }
 
-            FastVisitedSet in;
-            RealityBubbleArray<std::pair<int, tripoint_bub_ms>> best_states;
+            FastTripointSet4 in;
+            RealityBubbleArray<std::pair<int, PackedTripoint>> best_states;
         };
 
-        static constexpr int get_index( const tripoint_bub_ms &p ) {
-            constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
-            return ( p.z() + OVERMAP_DEPTH ) * layer_size + p.y() * MAPSIZE_X + p.x();
-        }
-
         RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<tripoint_bub_ms, int, FastVisitedSet, FastBestStateMap> astar_;
+        AStarPathfinder<PackedTripoint, int, FastTripointSet4, FastBestStateMap> astar_;
 };
 
 class PathfindingSettings
@@ -569,7 +799,7 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
 
         const Cost current_cost = best_state_[current_state].first;
         neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state,
-              current_cost]( const State & neighbour ) __declspec( noinline ) {
+              current_cost]( const State & neighbour ) {
             if( visited_.count( neighbour ) == 1 ) {
                 return;
             }
@@ -595,10 +825,10 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
     return result;
 }
 
-inline bool RealityBubblePathfinder::FastVisitedSet::emplace( const tripoint_bub_ms &p )
+template <typename T, typename I, I kMax>
+inline bool RealityBubblePathfinder::FastIntSet<T, I, kMax>::emplace( T i )
 {
-    const int i = get_index( p );
-    const int test = visited[i];
+    const I test = visited[i];
     if( test >= in.size() || in[test] != i ) {
         visited[i] = in.size();
         in.push_back( i );
@@ -607,10 +837,10 @@ inline bool RealityBubblePathfinder::FastVisitedSet::emplace( const tripoint_bub
     return false;
 }
 
-inline std::size_t RealityBubblePathfinder::FastVisitedSet::count( const tripoint_bub_ms &p ) const
+template <typename T, typename I, I kMax>
+inline std::size_t RealityBubblePathfinder::FastIntSet<T, I, kMax>::count( T i ) const
 {
-    const int i = get_index( p );
-    const int test = visited[i];
+    const I test = visited[i];
     return test < in.size() && in[test] == i;
 }
 
@@ -631,29 +861,29 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         RealityBubblePathfindingSettings &settings, const tripoint_bub_ms &from,
         const tripoint_bub_ms &to, CostFn cost_fn, HeuristicFn heuristic_fn )
 {
-    std::vector<tripoint_bub_ms> path = astar_.find_path( settings.max_cost(), from, to, [this,
-            &settings]( const tripoint_bub_ms & current,
+    std::vector<PackedTripoint> path = astar_.find_path( settings.max_cost(), from, to, [this,
+            &settings]( PackedTripoint current,
     auto &&emit_fn ) {
-        const int cx = current.x();
-        const int cy = current.y();
-        const int cz = current.z();
+        const X cx = current.x;
+        const Y cy = current.y;
+        const Z cz = current.z;
 
-        const int min_x = std::max( cx - 1, 0 );
-        const int max_x = std::min( cx + 1, MAPSIZE_X - 1 );
+        const X min_x = cx > 0 ? cx - 1 : 0;
+        const X max_x = cx < MAPSIZE_X - 1 ? cx + 1 : MAPSIZE_X - 1;
 
-        const int min_y = std::max( cy - 1, 0 );
-        const int max_y = std::min( cy + 1, MAPSIZE_Y - 1 );
+        const Y min_y = cy > 0 ? cy - 1 : 0;
+        const Y max_y = cy < MAPSIZE_Y - 1 ? cy + 1 : MAPSIZE_Y - 1;
 
         const PathfindingFlags avoid = settings.avoid_mask();
 
         if( settings.allow_flying() ) {
-            for( int z = std::max( cz - 1, -OVERMAP_DEPTH ); z <= std::min( cz + 1, OVERMAP_HEIGHT ); ++z ) {
-                for( int y = min_y; y <= max_y; ++y ) {
-                    for( int x = min_x; x <= max_x; ++x ) {
+            for( Z z = std::max( cz - 1, -OVERMAP_DEPTH ); z <= std::min( cz + 1, OVERMAP_HEIGHT ); ++z ) {
+                for( Y y = min_y; y <= max_y; ++y ) {
+                    for( X x = min_x; x <= max_x; ++x ) {
                         if( x == cx && y == cy && z == cz ) {
                             continue;
                         }
-                        const tripoint_bub_ms next( x, y, z );
+                        const PackedTripoint next( x, y, z );
                         if( cache_->flags( next ) & avoid ) {
                             continue;
                         }
@@ -668,17 +898,17 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
 
         // If we're falling, we can only continue falling.
         if( cz > -OVERMAP_DEPTH && flags.is_set( PathfindingFlag::Air ) ) {
-            const tripoint_bub_ms down( cx, cy, cz - 1 );
+            const PackedTripoint down( cx, cy, cz - 1 );
             emit_fn( down );
             return;
         }
 
-        for( int y = min_y; y <= max_y; ++y ) {
-            for( int x = min_x; x <= max_x; ++x ) {
+        for( Y y = min_y; y <= max_y; ++y ) {
+            for( X x = min_x; x <= max_x; ++x ) {
                 if( x == cx && y == cy ) {
                     continue;
                 }
-                const tripoint_bub_ms next( x, y, cz );
+                const PackedTripoint next( x, y, cz );
                 if( cache_->flags( next ) & avoid ) {
                     continue;
                 }
@@ -695,12 +925,12 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
             }
         }
         if( flags.is_set( PathfindingFlag::RampUp ) ) {
-            for( int y = min_y; y <= max_y; ++y ) {
-                for( int x = min_x; x <= max_x; ++x ) {
+            for( Y y = min_y; y <= max_y; ++y ) {
+                for( X x = min_x; x <= max_x; ++x ) {
                     if( x == cx && y == cy ) {
                         continue;
                     }
-                    const tripoint_bub_ms above( x, y, cz + 1 );
+                    const PackedTripoint above( x, y, cz + 1 );
                     if( cache_->flags( above ) & avoid ) {
                         continue;
                     }
@@ -709,12 +939,12 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
             }
         }
         if( flags.is_set( PathfindingFlag::RampDown ) ) {
-            for( int y = min_y; y <= max_y; ++y ) {
-                for( int x = min_x; x <= max_x; ++x ) {
+            for( Y y = min_y; y <= max_y; ++y ) {
+                for( X x = min_x; x <= max_x; ++x ) {
                     if( x == cx && y == cy ) {
                         continue;
                     }
-                    const tripoint_bub_ms below( x, y, cz - 1 );
+                    const PackedTripoint below( x, y, cz - 1 );
                     if( cache_->flags( below ) & avoid ) {
                         continue;
                     }
@@ -723,7 +953,13 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
             }
         }
     }, std::move( cost_fn ), std::move( heuristic_fn ) );
-    return path;
+
+    std::vector<tripoint_bub_ms> tripath;
+    tripath.reserve( path.size() );
+    for( PackedTripoint p : path ) {
+        tripath.push_back( p );
+    }
+    return tripath;
 }
 
 // Legacy Pathfinding
