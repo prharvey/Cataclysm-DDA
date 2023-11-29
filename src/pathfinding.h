@@ -291,127 +291,7 @@ class RealityBubblePathfinder
         };
 
         struct FastTripointSet {
-            static constexpr int get_index( PackedTripoint p ) {
-                constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
-                return ( p.z + OVERMAP_DEPTH ) * layer_size + p.y * MAPSIZE_X + p.x;
-            }
-
-            bool emplace( PackedTripoint p ) {
-                const int i = get_index( p );
-                return in_.emplace( i );
-            }
-
-            void clear() {
-                in_.clear();
-            }
-
-            std::size_t count( PackedTripoint p ) const {
-                const int i = get_index( p );
-                return in_.count( i );
-            }
-
-            FastIntSet<int, std::uint32_t, MAPSIZE_X *MAPSIZE_Y *OVERMAP_LAYERS> in_;
-        };
-
-        struct FastTripointSet2 {
-            static constexpr std::size_t kBits = MAPSIZE_X * MAPSIZE_Y * OVERMAP_LAYERS;
-            static constexpr std::size_t kWords = ( kBits / 64 ) + 1;
-            static constexpr std::uint64_t kBitMask = 64 - 1;
-
-            static constexpr std::uint16_t get_word( std::uint64_t index ) {
-                return index / 64;
-            }
-
-            static constexpr std::uint64_t get_bit( std::uint64_t index ) {
-                return index & kBitMask;
-            }
-
-            static constexpr int get_index( PackedTripoint p ) {
-                constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
-                return ( p.z + OVERMAP_DEPTH ) * layer_size + p.y * MAPSIZE_X + p.x;
-            }
-
-            bool emplace( PackedTripoint p ) {
-                const std::uint64_t i = get_index( p );
-                const std::uint16_t word = get_word( i );
-                if( used_words_.emplace( word ) ) {
-                    words_[word] = 0;
-                }
-                const std::uint64_t bit = get_bit( i );
-                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
-                const bool has_bit = words_[word] & mask;
-                words_[word] |= mask;
-                return !has_bit;
-            }
-
-            void clear() {
-                used_words_.clear();
-            }
-
-            std::size_t count( PackedTripoint p ) const {
-                const std::uint64_t i = get_index( p );
-                const std::uint16_t word = get_word( i );
-                if( used_words_.count( word ) == 1 ) {
-                    const std::uint64_t bit = get_bit( i );
-                    const bool has_bit = words_[word] & ( std::uint64_t{ 1 } << bit );
-                    return has_bit;
-                }
-                return 0;
-            }
-
-            FastIntSet<std::uint16_t, std::uint16_t, kWords> used_words_;
-            std::array<std::uint64_t, kWords> words_;
-        };
-
-        struct FastTripointSet3 {
-            static constexpr std::size_t kBits = MAPSIZE_X * MAPSIZE_Y * OVERMAP_LAYERS;
-            static constexpr std::size_t kWords = ( kBits / 64 ) + 1;
-            static constexpr std::uint64_t kBitMask = 64 - 1;
-
-            static constexpr std::uint16_t get_word( std::uint64_t index ) {
-                return index / 64;
-            }
-
-            static constexpr std::uint64_t get_bit( std::uint64_t index ) {
-                return index & kBitMask;
-            }
-
-            static constexpr int get_index( PackedTripoint p ) {
-                constexpr int layer_size = MAPSIZE_X * MAPSIZE_Y;
-                return ( p.z + OVERMAP_DEPTH ) * layer_size + p.y * MAPSIZE_X + p.x;
-            }
-
-            bool emplace( PackedTripoint p ) {
-                const std::uint64_t i = get_index( p );
-                const std::uint16_t word = get_word( i );
-                used_words_.emplace( word );
-                const std::uint64_t bit = get_bit( i );
-                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
-                const bool has_bit = words_[word] & mask;
-                words_[word] |= mask;
-                return !has_bit;
-            }
-
-            void clear() {
-                for( std::uint16_t i : used_words_ ) {
-                    words_[i] = 0;
-                }
-                used_words_.clear();
-            }
-
-            std::size_t count( PackedTripoint p ) const {
-                const std::uint64_t i = get_index( p );
-                const std::uint16_t word = get_word( i );
-                const std::uint64_t bit = get_bit( i );
-                const bool has_bit = words_[word] & ( std::uint64_t{ 1 } << bit );
-                return has_bit;
-            }
-
-            FastIntSet<std::uint16_t, std::uint16_t, kWords> used_words_;
-            std::array<std::uint64_t, kWords> words_;
-        };
-
-        struct FastTripointSet4 {
+            static constexpr std::size_t kWords = MAPSIZE_X / 64 + 1;
             static constexpr std::uint64_t kBitMask = 64 - 1;
 
             static constexpr std::size_t get_word( std::uint64_t index ) {
@@ -440,7 +320,7 @@ class RealityBubblePathfinder
                     }
                     dirty_[z] = false;
                     for( int y = 0; y < MAPSIZE_Y; ++y ) {
-                        for( int x = 0; x < 3; ++x ) {
+                        for( int x = 0; x < kWords; ++x ) {
                             words_[z][y][x] = 0;
                         }
                     }
@@ -456,36 +336,7 @@ class RealityBubblePathfinder
             }
 
             std::array<bool, OVERMAP_LAYERS> dirty_;
-            std::array<std::array<std::array<std::uint64_t, 3>, MAPSIZE_Y>, OVERMAP_LAYERS> words_;
-        };
-
-        struct FastTripointSet5 {
-            bool emplace( PackedTripoint p ) {
-                const int z = p.z + OVERMAP_DEPTH;
-                dirty_[z] = true;
-                return !std::exchange( is_set_[z][p.y][p.x], true );
-            }
-
-            void clear() {
-                for( int z = 0; z < OVERMAP_HEIGHT; ++z ) {
-                    if( !dirty_[z] ) {
-                        continue;
-                    }
-                    dirty_[z] = false;
-                    for( int y = 0; y < MAPSIZE_Y; ++y ) {
-                        for( int x = 0; x < MAPSIZE_X; ++x ) {
-                            is_set_[z][y][x] = false;
-                        }
-                    }
-                }
-            }
-
-            std::size_t count( PackedTripoint p ) const {
-                return is_set_[p.z + OVERMAP_DEPTH][p.y][p.x];
-            }
-
-            std::array<bool, OVERMAP_LAYERS> dirty_;
-            std::array<std::array<std::array<bool, MAPSIZE_X>, MAPSIZE_Y>, OVERMAP_LAYERS> is_set_;
+            std::array<std::array<std::array<std::uint64_t, kWords>, MAPSIZE_Y>, OVERMAP_LAYERS> words_;
         };
 
         struct FastBestStateMap {
@@ -509,12 +360,12 @@ class RealityBubblePathfinder
                 return *try_emplace( child, 0, child ).first;
             }
 
-            FastTripointSet4 in;
+            FastTripointSet in;
             RealityBubbleArray<std::pair<int, PackedTripoint>> best_states;
         };
 
         RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<PackedTripoint, int, FastTripointSet4, FastBestStateMap> astar_;
+        AStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestStateMap> astar_;
 };
 
 class PathfindingSettings
@@ -800,19 +651,19 @@ std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_
         const Cost current_cost = best_state_[current_state].first;
         neighbors_fn( current_state, [this, &frontier, &cost_fn, &heuristic_fn, &current_state,
               current_cost]( const State & neighbour ) {
-            if( visited_.count( neighbour ) == 1 ) {
+            if( visited_.count( neighbour ) ) {
                 return;
             }
-            /*if (current_cost >= best_cost) {
+            const auto& [iter, _] = best_state_.try_emplace(neighbour, std::numeric_limits<Cost>::max(),
+                State());
+            auto& [best_cost, parent] = *iter;
+            if (current_cost >= best_cost) {
                 // Can't possibly do better than we've already seen, no matter what the cost
                 // function says.
                 return;
-            }*/
+            }
             if( const std::optional<Cost> transition_cost = cost_fn( current_state, neighbour ) ) {
                 const Cost new_cost = current_cost + *transition_cost;
-                const auto& [iter, _] = best_state_.try_emplace( neighbour, std::numeric_limits<Cost>::max(),
-                                        State() );
-                auto& [best_cost, parent] = *iter;
                 if( new_cost < best_cost ) {
                     best_cost = new_cost;
                     parent = current_state;
