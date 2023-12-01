@@ -399,6 +399,10 @@ void overmap_npc_move()
 
 } // namespace
 
+extern int mon_routes_total;
+extern int mon_routes_ok;
+extern int mon_routes_missing;
+
 // MAIN GAME LOOP
 // Returns true if game is over (death, saved, quit, etc)
 bool do_turn()
@@ -684,6 +688,16 @@ bool do_turn()
             pf_total = 0;
             pf_found = 0;
             pf_not_found = 0;
+
+            add_msg("Mon PF %d calls. %d found (%.2f), %d not found (%.2f).", mon_routes_total,
+                mon_routes_ok, (100.0 * mon_routes_ok) / mon_routes_total,
+                mon_routes_missing, (100.0 * mon_routes_missing) / mon_routes_total);
+
+            add_msg("Average traversed: %.2f", (100.0 * pop_total) / mon_routes_total);
+
+            mon_routes_total = 0;
+            mon_routes_ok = 0;
+            mon_routes_missing = 0;
 
             add_msg("PF saw %d total tiles. %d OK (%.2f), %d repeated (%.2f), %d too far (%.2f).", pop_total,
                 pop_ok, (100.0 * pop_ok) / pop_total,

@@ -225,8 +225,8 @@ PathfindingSettings monster::get_pathfinding_settings() const
     // Don't enter open pits ever unless tiny, can fly or climb well
     settings.set_avoid_pits( avoid_fall && type->size != creature_size::tiny && !can_climb() );
 
-    // Some things are only avoided if we're not attacking
-    if( attitude( &get_player_character() ) != MATT_ATTACK ) {
+    // Some things are only avoided if we're not attacking the player
+    if( get_player_character().get_location() != get_dest() || attitude( &get_player_character() ) != MATT_ATTACK ) {
         // Sharp terrain is ignored while attacking
         settings.set_avoid_sharp( avoid_sharp && !( type->size == creature_size::tiny || can_fly ||
                                   get_armor_type( damage_cut, bodypart_id( "torso" ) ) >= 10 ) );
@@ -511,6 +511,10 @@ static void flood_fill_zone( Creature &origin )
         zone_number++;
     }
 }
+
+int mon_routes_total = 0;
+int mon_routes_ok = 0;
+int mon_routes_missing = 0;
 
 void monster::plan()
 {
@@ -1090,8 +1094,14 @@ void monster::move()
                 ( path.empty() || rl_dist( pos(), path.front() ) >= 2 || path.back() != local_dest ) ) {
                 // We need a new path
                 path.clear();
+                mon_routes_total++;
                 for( const tripoint_bub_ms &p : here.route( pos_bub(), tripoint_bub_ms( local_dest ), settings ) ) {
                     path.push_back( p.raw() );
+                }
+                if (path.empty()) {
+                    mon_routes_missing++;
+                } else {
+                    mon_routes_ok++;
                 }
             }
 

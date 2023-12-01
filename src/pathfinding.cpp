@@ -523,7 +523,7 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
         return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ );
     },
-    [to]( const tripoint_bub_ms & from ) {
+    []( const tripoint_bub_ms & from, const tripoint_bub_ms& to ) {
         return 100 * octile_distance( from, to );
     } );
 }
