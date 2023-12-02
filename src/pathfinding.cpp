@@ -129,7 +129,7 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
             if( const auto bash_range = here.bash_range( p.raw() ) ) {
                 flags |= PathfindingFlag::Bashable;
                 impassable = false;
-                bash_range_ref(p) = *bash_range;
+                bash_range_ref( p ) = *bash_range;
             }
         }
 
@@ -174,10 +174,10 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
         }
     }
 
-    if (cost > std::numeric_limits<char>::max()) {
-        debugmsg("Tile move cost too large for cache: %s, %d", terrain_id.id().str(), cost);
+    if( cost > std::numeric_limits<char>::max() ) {
+        debugmsg( "Tile move cost too large for cache: %s, %d", terrain_id.id().str(), cost );
     } else {
-        move_cost_ref(p) = cost < 2 ? 2 : cost;
+        move_cost_ref( p ) = cost < 2 ? 2 : cost;
     }
 
     if( terrain.has_flag( ter_furn_flag::TFLAG_NO_FLOOR ) ) {
@@ -322,21 +322,71 @@ float octile_distance( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
     return ( three_axis - two_axis ) * min + ( two_axis - one_axis ) * mid + one_axis * max;
 }
 
-CostOrError<int> pathfinding_move_cost_internal( const map &here, const tripoint_bub_ms &from,
-        const tripoint_bub_ms &to, const PathfindingSettings &settings,
-        const RealityBubblePathfindingCache &cache )
+std::optional<int> position_cost( const map &here, const tripoint_bub_ms &p,
+                                  const PathfindingSettings &settings, const RealityBubblePathfindingCache &cache )
 {
-    const PathfindingFlags flags = cache.flags( to );
+    const PathfindingFlags flags = cache.flags( p );
     if( flags & settings.avoid_mask() ) {
-        return PathfinderStatus::BadState;
+        return std::nullopt;
     }
 
+    int cost = 0;
+    if( flags.is_set( PathfindingFlag::Obstacle ) ) {
+        if( settings.is_digging() ) {
+            if( !flags.is_set( PathfindingFlag::Burrowable ) ) {
+                return std::nullopt;
+            }
+        } else if( flags.is_set( PathfindingFlag::Climmable ) && !settings.avoid_climbing() &&
+                   settings.climb_cost() > 0 ) {
+            // Climbing fences
+            cost = settings.climb_cost();
+        } else if( flags.is_set( PathfindingFlag::Door ) && !settings.avoid_opening_doors() &&
+                   ( !flags.is_set( PathfindingFlag::LockedDoor ) || !settings.avoid_unlocking_doors() ) ) {
+            cost = flags.is_set( PathfindingFlag::LockedDoor ) ? 4 : 2;
+        } else if( flags.is_set( PathfindingFlag::Bashable ) ) {
+            const auto [bash_min, bash_max] = cache.bash_range( p );
+            const int bash_rating = settings.bash_rating_from_range( bash_min, bash_max );
+            if( bash_rating >= 1 ) {
+                // Expected number of turns to bash it down
+                cost = 20 / bash_rating;
+            } else {
+                // Unbashable and unopenable from here
+                return std::nullopt;
+            }
+        } else {
+            // Can't pass the obstacle at all.
+            return std::nullopt;
+        }
+    }
+
+    const auto &maybe_avoid_dangerous_fields_fn = settings.maybe_avoid_dangerous_fields_fn();
+    if( flags.is_set( PathfindingFlag::DangerousField ) && maybe_avoid_dangerous_fields_fn ) {
+        const field &target_field = here.field_at( p.raw() );
+        for( const auto &dfield : target_field ) {
+            if( dfield.second.is_dangerous() && maybe_avoid_dangerous_fields_fn( dfield.first ) ) {
+                return std::nullopt;
+            }
+        }
+    }
+
+    const auto &maybe_avoid_fn = settings.maybe_avoid_fn();
+    if( maybe_avoid_fn && maybe_avoid_fn( p ) ) {
+        return std::nullopt;
+    }
+
+    return cost * 50;
+}
+
+std::optional<int> transition_cost( const map &here, const tripoint_bub_ms &from,
+                                    const tripoint_bub_ms &to, const PathfindingSettings &settings,
+                                    const RealityBubblePathfindingCache &cache )
+{
     const PathfindingFlags from_flags = cache.flags( from );
     const bool is_falling = from_flags.is_set( PathfindingFlag::Air ) && !settings.is_flying();
     if( is_falling ) {
         // Can only fall straight down.
         if( from.z() < to.z() || from.xy() != to.xy() ) {
-            return PathfinderStatus::BadTransition;
+            return std::nullopt;
         }
     }
 
@@ -347,91 +397,45 @@ CostOrError<int> pathfinding_move_cost_internal( const map &here, const tripoint
         if( cache.flags( lower ).is_set( PathfindingFlag::GoesUp ) &&
             cache.flags( upper ).is_set( PathfindingFlag::GoesDown ) ) {
             if( settings.avoid_climb_stairway() ) {
-                return PathfinderStatus::BadTransition;
+                return std::nullopt;
             }
         } else if( settings.is_flying() ) {
             const tripoint_bub_ms below_upper( upper.xy(), upper.z() - 1 );
             const tripoint_bub_ms above_lower( lower.xy(), lower.z() + 1 );
             if( !( cache.flags( below_upper ).is_set( PathfindingFlag::Air ) ||
                    cache.flags( above_lower ).is_set( PathfindingFlag::Air ) ) ) {
-                return PathfinderStatus::BadTransition;
+                return std::nullopt;
             }
         } else if( !( from.z() < to.z() && from_flags.is_set( PathfindingFlag::RampUp ) ) ||
                    !( from.z() > to.z() && from_flags.is_set( PathfindingFlag::RampDown ) ) ) {
-            return PathfinderStatus::BadTransition;
+            return std::nullopt;
         }
     }
 
-    constexpr int turn_cost = 2;
-    int extra_cost = 0;
+
+    const PathfindingFlags flags = cache.flags( from );
     if( flags.is_set( PathfindingFlag::Obstacle ) ) {
-        if( settings.is_digging() ) {
-            if( !flags.is_set( PathfindingFlag::Burrowable ) ) {
-                return PathfinderStatus::BadState;
-            }
-        } else if( flags.is_set( PathfindingFlag::Climmable ) && !settings.avoid_climbing() &&
-                   settings.climb_cost() > 0 ) {
-            // Climbing fences
-            extra_cost += settings.climb_cost();
-        } else if( flags.is_set( PathfindingFlag::Door ) && !settings.avoid_opening_doors() &&
-                   ( !flags.is_set( PathfindingFlag::LockedDoor ) || !settings.avoid_unlocking_doors() ) ) {
-            const bool is_inside_door = flags.is_set( PathfindingFlag::InsideDoor );
-            if( is_inside_door ) {
-                int dummy;
-                const bool is_vehicle = flags.is_set( PathfindingFlag::Vehicle );
-                const bool is_outside = is_vehicle ? here.veh_at_internal( from.raw(),
-                                        dummy ) != here.veh_at_internal( to.raw(), dummy ) : here.is_outside( from.raw() );
-                if( is_outside ) {
-                    return PathfinderStatus::BadTransition;
+        if( !settings.is_digging() ) {
+            if( flags.is_set( PathfindingFlag::Door ) && !settings.avoid_opening_doors() &&
+                ( !flags.is_set( PathfindingFlag::LockedDoor ) || !settings.avoid_unlocking_doors() ) ) {
+                const bool is_inside_door = flags.is_set( PathfindingFlag::InsideDoor );
+                if( is_inside_door ) {
+                    int dummy;
+                    const bool is_vehicle = flags.is_set( PathfindingFlag::Vehicle );
+                    const bool is_outside = is_vehicle ? here.veh_at_internal( from.raw(),
+                                            dummy ) != here.veh_at_internal( to.raw(), dummy ) : here.is_outside( from.raw() );
+                    if( is_outside ) {
+                        return std::nullopt;
+                    }
                 }
             }
-            const bool is_locked_door = flags.is_set( PathfindingFlag::LockedDoor );
-            if( is_locked_door ) {
-                // An extra turn to unlock.
-                extra_cost += turn_cost;
-            }
-            // An extra turn to open.
-            extra_cost += turn_cost;
-        } else if ( flags.is_set( PathfindingFlag::Bashable ) ) {
-            const auto [bash_min, bash_max] = cache.bash_range( to );
-            const int bash_rating = settings.bash_rating_from_range( bash_min, bash_max );
-            if( bash_rating >= 1 ) {
-                // Expected number of turns to bash it down
-                extra_cost += 20 / bash_rating;
-            } else {
-                // Unbashable and unopenable from here
-                return PathfinderStatus::BadState;
-            }
-        } else {
-            // Can't pass the obstacle at all.
-            return PathfinderStatus::BadState;
         }
-    }
-
-    const auto &maybe_avoid_dangerous_fields_fn = settings.maybe_avoid_dangerous_fields_fn();
-    if( flags.is_set( PathfindingFlag::DangerousField ) && maybe_avoid_dangerous_fields_fn ) {
-        const field &target_field = here.field_at( to.raw() );
-        for( const auto &dfield : target_field ) {
-            if( dfield.second.is_dangerous() && maybe_avoid_dangerous_fields_fn( dfield.first ) ) {
-                return PathfinderStatus::BadState;
-            }
-        }
-    }
-
-    const auto &maybe_avoid_fn = settings.maybe_avoid_fn();
-    if( maybe_avoid_fn && maybe_avoid_fn( to ) ) {
-        return PathfinderStatus::BadState;
     }
 
     // TODO: Move the move cost cache into map so this logic isn't duplicated.
-    //static constexpr std::array<int, 4> mults = { 0, 50, 71, 100 };
-    // Multiply cost depending on the number of differing axes
-    // 0 if all axes are equal, 100% if only 1 differs, 141% for 2, 200% for 3
-    /*const std::size_t match = trigdist ? (from.x() != to.x()) + (from.y() != to.y()) +
-                              is_vertical_movement : 1;*/
     const float mult = octile_distance( from, to ) * 25;
     const int cost = cache.move_cost( from ) + cache.move_cost( to );
-    return mult * cost + extra_cost * 50;
+    return mult * cost;
 }
 
 }  // namespace
@@ -439,6 +443,7 @@ CostOrError<int> pathfinding_move_cost_internal( const map &here, const tripoint
 int pf_total = 0;
 int pf_found = 0;
 int pf_not_found = 0;
+int pf_not_found_early = 0;
 
 int pop_total = 0;
 int pop_ok = 0;
@@ -456,7 +461,7 @@ int next_bad_higher_cost_after = 0;
 bool map::can_teleport( const tripoint_bub_ms &to, const PathfindingSettings &settings ) const
 {
     pathfinding_cache_->update( *this );
-    return pathfinding_move_cost_internal( *this, to, to, settings, *pathfinding_cache_ ).has_cost();
+    return position_cost( *this, to, settings, *pathfinding_cache_ ).has_value();
 }
 
 bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
@@ -466,7 +471,10 @@ bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
         return true;
     }
     pathfinding_cache_->update( *this );
-    return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ ).has_cost();
+    if( position_cost( *this, to, settings, *pathfinding_cache_ ).has_value() ) {
+        return transition_cost( *this, from, to, settings, *pathfinding_cache_ ).has_value();
+    }
+    return false;
 }
 
 std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
@@ -476,7 +484,13 @@ std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_b
         return 0;
     }
     pathfinding_cache_->update( *this );
-    return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ ).to_optional();
+    if( const std::optional<int> p_cost = position_cost( *this, to, settings, *pathfinding_cache_ ) ) {
+        if( const std::optional<int> t_cost = transition_cost( *this, from, to, settings,
+                                              *pathfinding_cache_ ) ) {
+            return *p_cost + *t_cost;
+        }
+    }
+    return std::nullopt;
 }
 
 std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
@@ -497,18 +511,22 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
         return pathfinding_cache_->flags( p ) & avoid;
         } ) ) {
             // Now do the slow check.
-            if( pathfinding_move_cost_internal( *this, from, line_path[0], settings,
-                                                *pathfinding_cache_ ).has_cost() ) {
-                bool good = true;
-                for( int i = 1; i < line_path.size(); ++i ) {
-                    if( !pathfinding_move_cost_internal( *this, line_path[i - 1], line_path[i], settings,
-                                                         *pathfinding_cache_ ).has_cost() ) {
-                        good = false;
-                        break;
+            if( std::all_of( line_path.begin(), line_path.end(), [this,
+            &settings]( const tripoint_bub_ms & p ) {
+            return position_cost( *this, p, settings, *pathfinding_cache_ );
+            } ) ) {
+                if( transition_cost( *this, from, line_path[0], settings, *pathfinding_cache_ ).has_value() ) {
+                    bool good = true;
+                    for( int i = 1; i < line_path.size(); ++i ) {
+                        if( !transition_cost( *this, line_path[i - 1], line_path[i], settings,
+                                              *pathfinding_cache_ ).has_value() ) {
+                            good = false;
+                            break;
+                        }
                     }
-                }
-                if( good ) {
-                    return line_path;
+                    if( good ) {
+                        return line_path;
+                    }
                 }
             }
         }
@@ -520,10 +538,13 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
     }
 
     return pathfinder_->find_path( settings.rb_settings(), from, to,
-    [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return pathfinding_move_cost_internal( *this, from, to, settings, *pathfinding_cache_ );
+    [this, &settings]( const tripoint_bub_ms & p ) {
+        return position_cost( *this, p, settings, *pathfinding_cache_ );
     },
-    []( const tripoint_bub_ms & from, const tripoint_bub_ms& to ) {
+    [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
+        return transition_cost( *this, from, to, settings, *pathfinding_cache_ );
+    },
+    []( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
         return 100 * octile_distance( from, to );
     } );
 }
@@ -565,8 +586,8 @@ std::vector<tripoint> map::route( const tripoint &f, const tripoint &t,
     }
 
     PathfindingSettings new_settings = settings.to_new_pathfinding_settings();
-    new_settings.set_maybe_avoid_fn( [&pre_closed]( const tripoint_bub_ms & p ) {
-        return pre_closed.count( p.raw() ) == 1;
+    new_settings.set_maybe_avoid_fn( [&pre_closed, &f]( const tripoint_bub_ms & p ) {
+        return f != p.raw() && pre_closed.count( p.raw() ) == 1;
     } );
     for( const tripoint_bub_ms &p : route( tripoint_bub_ms( f ), tripoint_bub_ms( t ),
                                            new_settings ) ) {

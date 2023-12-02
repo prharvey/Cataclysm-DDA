@@ -679,43 +679,46 @@ bool do_turn()
             refresh_display();
             g->first_redraw_since_waiting_started = false;
 
-            add_msg("PF %d calls. %d found (%.2f), %d not found (%.2f).", pf_total,
-                pf_found, (100.0 * pf_found) / pf_total,
-                pf_not_found, (100.0 * pf_not_found) / pf_total);
+            add_msg( "PF %d calls. %d found (%.2f), %d not found (%.2f), %d not found early (%.2f).", pf_total,
+                     pf_found, ( 100.0 * pf_found ) / pf_total,
+                     pf_not_found, ( 100.0 * pf_not_found ) / pf_total,
+                     pf_not_found_early, ( 100.0 * pf_not_found_early ) / pf_total );
 
-            add_msg("Average traversed: %.2f", (100.0 * pop_total) / pf_total);
+            add_msg( "Average traversed: %.2f", ( 100.0 * pop_total ) / pf_total );
 
             pf_total = 0;
             pf_found = 0;
             pf_not_found = 0;
+            pf_not_found_early = 0;
 
-            add_msg("Mon PF %d calls. %d found (%.2f), %d not found (%.2f).", mon_routes_total,
-                mon_routes_ok, (100.0 * mon_routes_ok) / mon_routes_total,
-                mon_routes_missing, (100.0 * mon_routes_missing) / mon_routes_total);
+            add_msg( "Mon PF %d calls. %d found (%.2f), %d not found (%.2f).", mon_routes_total,
+                     mon_routes_ok, ( 100.0 * mon_routes_ok ) / mon_routes_total,
+                     mon_routes_missing, ( 100.0 * mon_routes_missing ) / mon_routes_total );
 
-            add_msg("Average traversed: %.2f", (100.0 * pop_total) / mon_routes_total);
+            add_msg( "Average traversed: %.2f", ( 100.0 * pop_total ) / mon_routes_total );
 
             mon_routes_total = 0;
             mon_routes_ok = 0;
             mon_routes_missing = 0;
 
-            add_msg("PF saw %d total tiles. %d OK (%.2f), %d repeated (%.2f), %d too far (%.2f).", pop_total,
-                pop_ok, (100.0 * pop_ok) / pop_total,
-                pop_bad_visited, (100.0 * pop_bad_visited) / pop_total,
-                pop_bad_too_far, (100.0 * pop_bad_too_far) / pop_total);
+            add_msg( "PF saw %d total tiles. %d OK (%.2f), %d repeated (%.2f), %d too far (%.2f).", pop_total,
+                     pop_ok, ( 100.0 * pop_ok ) / pop_total,
+                     pop_bad_visited, ( 100.0 * pop_bad_visited ) / pop_total,
+                     pop_bad_too_far, ( 100.0 * pop_bad_too_far ) / pop_total );
 
             pop_total = 0;
             pop_ok = 0;
             pop_bad_too_far = 0;
             pop_bad_visited = 0;
 
-            add_msg("PF next saw %d total tiles. %d OK (%.2f), %d repeated (%.2f), %d bad state (%.2f), %d bad transition (%.2f), %d cost before (%.2f), %d cost after (%.2f)", next_total,
-                    next_ok, (100.0 * next_ok) / next_total,
-                    next_bad_visited, (100.0 * next_bad_visited) / next_total,
-                    next_bad_state, (100.0 * next_bad_state) / next_total,
-                    next_bad_transition, (100.0 * next_bad_transition) / next_total,
-                    next_bad_higher_cost_before, (100.0 * next_bad_higher_cost_before) / next_total,
-                    next_bad_higher_cost_after, (100.0 * next_bad_higher_cost_after) / next_total);
+            add_msg( "PF next saw %d total tiles. %d OK (%.2f), %d repeated (%.2f), %d bad state (%.2f), %d bad transition (%.2f), %d cost before (%.2f), %d cost after (%.2f)",
+                     next_total,
+                     next_ok, ( 100.0 * next_ok ) / next_total,
+                     next_bad_visited, ( 100.0 * next_bad_visited ) / next_total,
+                     next_bad_state, ( 100.0 * next_bad_state ) / next_total,
+                     next_bad_transition, ( 100.0 * next_bad_transition ) / next_total,
+                     next_bad_higher_cost_before, ( 100.0 * next_bad_higher_cost_before ) / next_total,
+                     next_bad_higher_cost_after, ( 100.0 * next_bad_higher_cost_after ) / next_total );
 
             next_total = 0;
             next_ok = 0;
