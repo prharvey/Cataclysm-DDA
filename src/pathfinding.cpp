@@ -325,6 +325,19 @@ float octile_distance( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
     return ( three_axis - two_axis ) * min + ( two_axis - one_axis ) * mid + one_axis * max;
 }
 
+float square_distance( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
+{
+    const int dx = std::abs( from.x() - to.x() );
+    const int dy = std::abs( from.y() - to.y() );
+    const int dz = std::abs( from.z() - to.z() );
+    return std::max( dx, std::max( dy, dz ) );
+}
+
+float distance_metric( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
+{
+    return trigdist ? octile_distance( from, to ) : square_distance( from, to );
+}
+
 std::optional<int> position_cost( const map &here, const tripoint_bub_ms &p,
                                   const PathfindingSettings &settings, const RealityBubblePathfindingCache &cache )
 {
@@ -436,7 +449,7 @@ std::optional<int> transition_cost( const map &here, const tripoint_bub_ms &from
     }
 
     // TODO: Move the move cost cache into map so this logic isn't duplicated.
-    const float mult = octile_distance( from, to ) * 25;
+    const float mult = distance_metric( from, to ) * 25;
     const int cost = cache.move_cost( from ) + cache.move_cost( to );
     return mult * cost;
 }
@@ -445,6 +458,9 @@ std::optional<int> transition_cost( const map &here, const tripoint_bub_ms &from
 
 bool map::can_teleport( const tripoint_bub_ms &to, const PathfindingSettings &settings ) const
 {
+    if( !inbounds( to ) ) {
+        return false;
+    }
     pathfinding_cache()->update( *this );
     return position_cost( *this, to, settings, *pathfinding_cache() ).has_value();
 }
@@ -452,6 +468,9 @@ bool map::can_teleport( const tripoint_bub_ms &to, const PathfindingSettings &se
 bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
                     const PathfindingSettings &settings ) const
 {
+    if( !inbounds( from ) || !inbounds( to ) ) {
+        return false;
+    }
     if( from == to ) {
         return true;
     }
@@ -465,6 +484,9 @@ bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
 std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
                                    const PathfindingSettings &settings ) const
 {
+    if( !inbounds( from ) || !inbounds( to ) ) {
+        return std::nullopt;
+    }
     if( from == to ) {
         return 0;
     }
@@ -530,7 +552,7 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
         return transition_cost( *this, from, to, settings, *pathfinding_cache() );
     },
     []( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return 100 * octile_distance( from, to );
+        return 100 * distance_metric( from, to );
     } );
 }
 

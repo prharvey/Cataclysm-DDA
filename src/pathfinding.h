@@ -925,6 +925,16 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl 
         const int yd = cy + dy;
 
         if( dx != 0 && dy != 0 ) {
+            // Diagonal movement. Visit the following states:
+            //
+            //  * * *
+            //  . c *
+            //  p . *
+            //
+            // where * is a state to be visited
+            // p is the parent state (not visited)
+            // c is the current state (not visited)
+            // . is not visited
             if( min_x <= xd && xd <= max_x ) {
                 for( int y = min_y; y <= max_y; ++y ) {
                     const PackedTripoint next( xd, y, cz );
@@ -941,6 +951,16 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl 
                 }
             }
         } else if( dx != 0 ) {
+            // Horizontal movement. Visit the following states:
+            //
+            //  . . *
+            //  p c *
+            //  . . *
+            //
+            // where * is a state to be visited
+            // p is the parent state (not visited)
+            // c is the current state (not visited)
+            // . is not visited
             if( min_x <= xd && xd <= max_x ) {
                 for( int y = min_y; y <= max_y; ++y ) {
                     const PackedTripoint next( xd, y, cz );
@@ -948,6 +968,16 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl 
                 }
             }
         } else if( dy != 0 ) {
+            // Vertical movement. Visit the following states:
+            //
+            //  * * *
+            //  . c .
+            //  . p .
+            //
+            // where * is a state to be visited
+            // p is the parent state (not visited)
+            // c is the current state (not visited)
+            // . is not visited
             if( min_y <= yd && yd <= max_y ) {
                 for( int x = min_x; x <= max_x; ++x ) {
                     const PackedTripoint next( x, yd, cz );
@@ -955,6 +985,9 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl 
                 }
             }
         } else {
+            // We arrived in this state with same x/y, which means
+            // we got here by traversing a staircase or similar. Need to
+            // visit all directions.
             for( int y = min_y; y <= max_y; ++y ) {
                 for( int x = min_x; x <= max_x; ++x ) {
                     if( x == cx && y == cy ) {
