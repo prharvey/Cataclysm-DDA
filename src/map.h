@@ -38,6 +38,7 @@
 #include "map_selector.h"
 #include "mapdata.h"
 #include "maptile_fwd.h"
+#include "pathfinding.h"
 #include "point.h"
 #include "reachability_cache.h"
 #include "rng.h"
@@ -91,8 +92,6 @@ using VehicleList = std::vector<wrapped_vehicle>;
 class map;
 
 enum class ter_furn_flag : int;
-struct pathfinding_cache;
-struct pathfinding_settings;
 template<typename T>
 struct weighted_int_list;
 struct field_proc_data;
@@ -350,9 +349,23 @@ class map
         void set_outside_cache_dirty( int zlev );
         void set_floor_cache_dirty( int zlev );
         void set_pathfinding_cache_dirty( int zlev );
+        void set_pathfinding_cache_dirty( const tripoint_bub_ms &p );
         /*@}*/
 
         void invalidate_map_cache( int zlev );
+
+        RealityBubblePathfindingCache *pathfinding_cache() const {
+            if( !pathfinding_cache_ ) {
+                pathfinding_cache_ = std::make_unique<RealityBubblePathfindingCache>();
+            }
+            return pathfinding_cache_.get();
+        }
+        RealityBubblePathfinder *pathfinder() const {
+            if( !pathfinder_ ) {
+                pathfinder_ = std::make_unique<RealityBubblePathfinder>( pathfinding_cache() );
+            }
+            return pathfinder_.get();
+        }
 
         // @returns true if map memory decoration should be re/memorized
         bool memory_cache_dec_is_dirty( const tripoint &p ) const;
@@ -657,6 +670,14 @@ class map
         std::vector<tripoint_bub_ms> route( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
                                             const pathfinding_settings &settings,
         const std::set<tripoint> &pre_closed = {{ }} ) const;
+
+        bool can_teleport( const tripoint_bub_ms &t, const PathfindingSettings &settings ) const;
+        bool can_move( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
+                       const PathfindingSettings &settings ) const;
+        std::optional<int> move_cost( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
+                                      const PathfindingSettings &settings ) const;
+        std::vector<tripoint_bub_ms> route( const tripoint_bub_ms &f, const tripoint_bub_ms &t,
+                                            const PathfindingSettings &settings ) const;
 
         // Vehicles: Common to 2D and 3D
         VehicleList get_vehicles();
@@ -1020,6 +1041,10 @@ class map
         int bash_rating( const int str, const point &p ) const {
             return bash_rating( str, tripoint( p, abs_sub.z() ) );
         }
+
+        // The range of minimum and maximum bash strength needed to bash something on the given tile.
+        // Returns std::nullopt if there is nothing bashable.
+        std::optional<std::pair<int, int>> bash_range( const tripoint &p, bool allow_floor = false ) const;
 
         // Rubble
         /** Generates rubble at the given location, if overwrite is true it just writes on top of what currently exists
@@ -2193,7 +2218,10 @@ class map
          */
         mutable std::array< std::unique_ptr<level_cache>, OVERMAP_LAYERS > caches;
 
-        mutable std::array< std::unique_ptr<pathfinding_cache>, OVERMAP_LAYERS > pathfinding_caches;
+        // Pathfinding caches. Lazily initialized, only use via accessors.
+        mutable std::unique_ptr<RealityBubblePathfindingCache> pathfinding_cache_;
+        mutable std::unique_ptr<RealityBubblePathfinder> pathfinder_;
+
         /**
          * Set of submaps that contain active items in absolute coordinates.
          */
@@ -2218,8 +2246,6 @@ class map
             return caches[zlev + OVERMAP_DEPTH].get();
         }
 
-        pathfinding_cache &get_pathfinding_cache( int zlev ) const;
-
         visibility_variables visibility_variables_cache;
 
         // caches the highest zlevel above which all zlevels are uniform
@@ -2237,10 +2263,6 @@ class map
         const level_cache &get_cache_ref( int zlev ) const {
             return get_cache( zlev );
         }
-
-        const pathfinding_cache &get_pathfinding_cache_ref( int zlev ) const;
-
-        void update_pathfinding_cache( int zlev ) const;
 
         void update_visibility_cache( int zlev );
         void invalidate_visibility_cache();
