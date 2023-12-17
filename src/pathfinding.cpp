@@ -310,6 +310,7 @@ int PathfindingSettings::bash_rating_from_range( int min, int max ) const
 namespace
 {
 
+// TODO: move these into tripoint_bub_ms code.
 float octile_distance( const tripoint_bub_ms &from, const tripoint_bub_ms &to )
 {
     const int dx = std::abs( from.x() - to.x() );
@@ -451,7 +452,7 @@ std::optional<int> transition_cost( const map &here, const tripoint_bub_ms &from
     // TODO: Move the move cost cache into map so this logic isn't duplicated.
     const float mult = distance_metric( from, to ) * 25;
     const int cost = cache.move_cost( from ) + cache.move_cost( to );
-    return mult * cost;
+    return static_cast<int>( mult * cost );
 }
 
 }  // namespace

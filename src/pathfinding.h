@@ -14,9 +14,9 @@ template <typename Node, typename Cost = int, typename VisitedSet = std::unorder
           class AStarState
 {
 public:
-    void reset( const Node &start, const Cost &cost );
+    void reset( const Node &start, Cost cost );
 
-    std::optional<Node> get_next( const Cost &max );
+    std::optional<Node> get_next( Cost max );
 
     template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
     void generate_neighbors( const Node &current, StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn,
@@ -50,7 +50,7 @@ template <typename Node, typename Cost = int, typename VisitedSet = std::unorder
 {
 public:
     template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-    std::vector<Node> find_path( const Cost &max, const Node &from, const Node &to,
+    std::vector<Node> find_path( Cost max, const Node &from, const Node &to,
                                  StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
                                  NeighborsFn &&neighbors_fn );
 
@@ -63,7 +63,7 @@ template <typename Node, typename Cost = int, typename VisitedSet = std::unorder
 {
 public:
     template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-    std::vector<Node> find_path( const Cost &max, const Node &from, const Node &to,
+    std::vector<Node> find_path( Cost max, const Node &from, const Node &to,
                                  StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
                                  NeighborsFn &&neighbors_fn );
 
@@ -276,11 +276,35 @@ class RealityBubblePathfindingSettings
             return avoid_mask_;
         }
 
+        int x_padding() const {
+            return x_padding_;
+        }
+        void set_x_padding( int v = 0 ) {
+            x_padding_ = v;
+        }
+
+        int y_padding() const {
+            return y_padding_;
+        }
+        void set_y_padding( int v = 0 ) {
+            y_padding_ = v;
+        }
+
+        int z_padding() const {
+            return z_padding_;
+        }
+        void set_z_padding( int v = 0 ) {
+            z_padding_ = v;
+        }
+
     private:
         bool allow_flying_ = false;
         bool allow_falling_ = false;
         bool allow_stairways_ = false;
         int max_cost_ = 0;
+        int x_padding_ = 16;
+        int y_padding_ = 16;
+        int z_padding_ = 1;
         PathfindingFlags avoid_mask_ = PathfindingFlag::Air | PathfindingFlag::Impassable;
 };
 
@@ -297,10 +321,18 @@ class RealityBubblePathfinder
                                                 PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn, HeuristicFn &&heuristic_fn );
 
     private:
+        // If you're seeing these asserts, you're probably messing with the reality bubble. These probably
+        // need to be made shorts instead.
         using X = unsigned char;
+        static_assert( MAPSIZE_X <= std::numeric_limits<X>::max(), "Type too small." );
         using Y = unsigned char;
+        static_assert( MAPSIZE_Y <= std::numeric_limits<Y>::max(), "Type too small." );
         using Z = char;
 
+        // This is a packed version of tripoint_bub_ms. This is done in order to conserve memory, and
+        // reduce the amount of cache thrashing.
+        //
+        // Note that z is based on 0, not -OVERMAP_DEPTH.
         struct PackedTripoint {
             X x;
             Y y;
@@ -327,15 +359,20 @@ class RealityBubblePathfinder
             }
         };
 
+        // Minimum implementation of std::unordered_set interface that is used in the pathfinder.
         class FastTripointSet
         {
             public:
-                bool emplace( PackedTripoint p ) {
+                // Empty dummy type to return in place of an iterator. It isn't possible to give a nice
+                // iterator implementation, and the pathfinder doesn't use it anyways.
+                struct NotIterator {};
+
+                std::pair<NotIterator, bool> emplace( PackedTripoint p ) {
                     dirty_[p.z] = true;
                     const int i = p.y * MAPSIZE_X + p.x;
                     const bool missing = !set_[p.z].test( i );
                     set_[p.z].set( i );
-                    return missing;
+                    return std::make_pair( NotIterator(), missing );
                 }
 
                 void clear() {
@@ -357,11 +394,13 @@ class RealityBubblePathfinder
                 std::array<std::bitset<MAPSIZE_X *MAPSIZE_Y>, OVERMAP_LAYERS> set_ = {};
         };
 
-        struct FastBestStateMap {
+
+        // Minimum implementation of std::unordered_map interface that is used in the pathfinder.
+        struct FastBestPathMap {
             std::pair<std::pair<int, PackedTripoint>*, bool> try_emplace( PackedTripoint child,
                     int cost, PackedTripoint parent ) {
                 std::pair<int, PackedTripoint> &result = best_states[child.z][child.y][child.x];
-                if( in.emplace( child ) ) {
+                if( const auto [_, inserted] = in.emplace( child ); inserted ) {
                     result.first = cost;
                     result.second = parent;
                     return std::make_pair( &result, true );
@@ -396,8 +435,8 @@ class RealityBubblePathfinder
                 PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn, HeuristicFn &&heuristic_fn );
 
         RealityBubblePathfindingCache *cache_;
-        AStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestStateMap> astar_;
-        BidirectionalAStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestStateMap>
+        AStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestPathMap> astar_;
+        BidirectionalAStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestPathMap>
         bidirectional_astar_;
 };
 
@@ -656,7 +695,7 @@ class PathfindingSettings
 // Implementation Details
 
 template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
-void AStarState<Node, Cost, VisitedSet, BestPathMap>::reset( const Node &start, const Cost &cost )
+void AStarState<Node, Cost, VisitedSet, BestPathMap>::reset( const Node &start, Cost cost )
 {
     visited_.clear();
     best_paths_.clear();
@@ -696,7 +735,7 @@ std::vector<Node> AStarState<Node, Cost, VisitedSet, BestPathMap>::path_to( cons
 }
 
 template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
-std::optional<Node> AStarState<Node, Cost, VisitedSet, BestPathMap>::get_next( const Cost &max )
+std::optional<Node> AStarState<Node, Cost, VisitedSet, BestPathMap>::get_next( Cost max )
 {
     while( !frontier_.empty() ) {
         auto [cost, current] = frontier_.top();
@@ -706,7 +745,7 @@ std::optional<Node> AStarState<Node, Cost, VisitedSet, BestPathMap>::get_next( c
             return std::nullopt;
         }
 
-        if( !visited_.emplace( current ) ) {
+        if( const auto [_, inserted] = visited_.emplace( current ); !inserted ) {
             continue;
         }
         return current;
@@ -749,7 +788,7 @@ void AStarState<Node, Cost, VisitedSet, BestPathMap>::generate_neighbors(
 template <typename Node, typename Cost, typename VisitedSet, typename BestStateMap>
 template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
 std::vector<Node> AStarPathfinder<Node, Cost, VisitedSet, BestStateMap>::find_path(
-    const Cost &max_cost, const Node &from, const Node &to, StateCostFn &&s_cost_fn,
+    Cost max_cost, const Node &from, const Node &to, StateCostFn &&s_cost_fn,
     TransitionCostFn &&t_cost_fn,
     HeuristicFn &&heuristic_fn, NeighborsFn &&neighbors_fn )
 {
@@ -774,7 +813,7 @@ std::vector<Node> AStarPathfinder<Node, Cost, VisitedSet, BestStateMap>::find_pa
 template <typename Node, typename Cost, typename VisitedSet, typename BestStateMap>
 template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
 std::vector<Node> BidirectionalAStarPathfinder<Node, Cost, VisitedSet, BestStateMap>::find_path(
-    const Cost &max_cost, const Node &from, const Node &to, StateCostFn &&s_cost_fn,
+    Cost max_cost, const Node &from, const Node &to, StateCostFn &&s_cost_fn,
     TransitionCostFn &&t_cost_fn,
     HeuristicFn &&heuristic_fn, NeighborsFn &&neighbors_fn )
 {
@@ -868,14 +907,16 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl 
         const tripoint_bub_ms &to, PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn,
         HeuristicFn &&heuristic_fn )
 {
-    const int pad = 16;
-    const int min_x_bound = std::max( std::min( to.x(), from.x() ) - pad, 0 );
-    const int max_x_bound = std::min( std::max( to.x(), from.x() ) + pad, MAPSIZE_X - 1 );
-    const int min_y_bound = std::max( std::min( to.y(), from.y() ) - pad, 0 );
-    const int max_y_bound = std::min( std::max( to.y(), from.y() ) + pad, MAPSIZE_Y - 1 );
-    const int min_z_bound = std::max( std::min( to.z(), from.z() ) + OVERMAP_DEPTH, 0 );
-    const int max_z_bound = std::min( std::max( to.z(), from.z() ) + OVERMAP_DEPTH,
-                                      OVERMAP_LAYERS - 1 );
+    const int min_x_bound = std::max( std::min( to.x(), from.x() ) - settings.x_padding(), 0 );
+    const int max_x_bound = std::min( std::max( to.x(), from.x() ) + settings.x_padding(),
+                                      MAPSIZE_X - 1 );
+    const int min_y_bound = std::max( std::min( to.y(), from.y() ) - settings.y_padding(), 0 );
+    const int max_y_bound = std::min( std::max( to.y(), from.y() ) + settings.y_padding(),
+                                      MAPSIZE_Y - 1 );
+    const int min_z_bound = std::max( std::min( to.z(),
+                                      from.z() ) - settings.z_padding() + OVERMAP_DEPTH, 0 );
+    const int max_z_bound = std::min( std::max( to.z(),
+                                      from.z() ) + settings.z_padding() + OVERMAP_DEPTH, OVERMAP_LAYERS - 1 );
 
     std::vector<PackedTripoint> path = impl.find_path( settings.max_cost(), from, to,
                                        std::forward<PositionCostFn>( p_cost_fn ), std::forward<MoveCostFn>( m_cost_fn ),
