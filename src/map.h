@@ -361,7 +361,16 @@ class map
         void invalidate_map_cache( int zlev );
 
         RealityBubblePathfindingCache *pathfinding_cache() const {
+            if( !pathfinding_cache_ ) {
+                pathfinding_cache_ = std::make_unique<RealityBubblePathfindingCache>();
+            }
             return pathfinding_cache_.get();
+        }
+        RealityBubblePathfinder *pathfinder() const {
+            if( !pathfinder_ ) {
+                pathfinder_ = std::make_unique<RealityBubblePathfinder>( pathfinding_cache() );
+            }
+            return pathfinder_.get();
         }
 
         // @returns true if map memory decoration should be re/memorized
@@ -2215,8 +2224,9 @@ class map
          */
         mutable std::array< std::unique_ptr<level_cache>, OVERMAP_LAYERS > caches;
 
-        std::unique_ptr<RealityBubblePathfindingCache> pathfinding_cache_;
-        std::unique_ptr<RealityBubblePathfinder> pathfinder_;
+        // Pathfinding caches. Lazily initialized, only use via accessors.
+        mutable std::unique_ptr<RealityBubblePathfindingCache> pathfinding_cache_;
+        mutable std::unique_ptr<RealityBubblePathfinder> pathfinder_;
 
         /**
          * Set of submaps that contain active items in absolute coordinates.

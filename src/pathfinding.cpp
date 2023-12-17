@@ -292,6 +292,9 @@ void RealityBubblePathfindingCache::update( const map &here, const tripoint_bub_
 
 int PathfindingSettings::bash_rating_from_range( int min, int max ) const
 {
+    if( avoid_bashing_ ) {
+        return 0;
+    }
     // TODO: Move all the bash stuff to map so this logic isn't duplicated.
     ///\EFFECT_STR increases smashing damage
     if( bash_strength_ < min ) {
@@ -440,28 +443,10 @@ std::optional<int> transition_cost( const map &here, const tripoint_bub_ms &from
 
 }  // namespace
 
-int pf_total = 0;
-int pf_found = 0;
-int pf_not_found = 0;
-int pf_not_found_early = 0;
-
-int pop_total = 0;
-int pop_ok = 0;
-int pop_bad_too_far = 0;
-int pop_bad_visited = 0;
-
-int next_total = 0;
-int next_ok = 0;
-int next_bad_visited = 0;
-int next_bad_state = 0;
-int next_bad_transition = 0;
-int next_bad_higher_cost_before = 0;
-int next_bad_higher_cost_after = 0;
-
 bool map::can_teleport( const tripoint_bub_ms &to, const PathfindingSettings &settings ) const
 {
-    pathfinding_cache_->update( *this );
-    return position_cost( *this, to, settings, *pathfinding_cache_ ).has_value();
+    pathfinding_cache()->update( *this );
+    return position_cost( *this, to, settings, *pathfinding_cache() ).has_value();
 }
 
 bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
@@ -470,9 +455,9 @@ bool map::can_move( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
     if( from == to ) {
         return true;
     }
-    pathfinding_cache_->update( *this );
-    if( position_cost( *this, to, settings, *pathfinding_cache_ ).has_value() ) {
-        return transition_cost( *this, from, to, settings, *pathfinding_cache_ ).has_value();
+    pathfinding_cache()->update( *this );
+    if( position_cost( *this, to, settings, *pathfinding_cache() ).has_value() ) {
+        return transition_cost( *this, from, to, settings, *pathfinding_cache() ).has_value();
     }
     return false;
 }
@@ -483,10 +468,10 @@ std::optional<int> map::move_cost( const tripoint_bub_ms &from, const tripoint_b
     if( from == to ) {
         return 0;
     }
-    pathfinding_cache_->update( *this );
-    if( const std::optional<int> p_cost = position_cost( *this, to, settings, *pathfinding_cache_ ) ) {
+    pathfinding_cache()->update( *this );
+    if( const std::optional<int> p_cost = position_cost( *this, to, settings, *pathfinding_cache() ) ) {
         if( const std::optional<int> t_cost = transition_cost( *this, from, to, settings,
-                                              *pathfinding_cache_ ) ) {
+                                              *pathfinding_cache() ) ) {
             return *p_cost + *t_cost;
         }
     }
@@ -499,7 +484,7 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
     if( from == to || !inbounds( from ) || !inbounds( to ) ) {
         return {};
     }
-    pathfinding_cache_->update( *this );
+    pathfinding_cache()->update( *this );
 
     // First, check for a simple straight line on flat ground
     // Except when the line contains a pre-closed tile - we need to do regular pathing then
@@ -508,18 +493,18 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
         const PathfindingFlags avoid = settings.avoid_mask() | PathfindingFlag::Obstacle;
         // Check all points for all fast avoidance.
         if( !std::any_of( line_path.begin(), line_path.end(), [this, avoid]( const tripoint_bub_ms & p ) {
-        return pathfinding_cache_->flags( p ) & avoid;
+        return pathfinding_cache()->flags( p ) & avoid;
         } ) ) {
             // Now do the slow check.
             if( std::all_of( line_path.begin(), line_path.end(), [this,
             &settings]( const tripoint_bub_ms & p ) {
-            return position_cost( *this, p, settings, *pathfinding_cache_ );
+            return position_cost( *this, p, settings, *pathfinding_cache() );
             } ) ) {
-                if( transition_cost( *this, from, line_path[0], settings, *pathfinding_cache_ ).has_value() ) {
+                if( transition_cost( *this, from, line_path[0], settings, *pathfinding_cache() ).has_value() ) {
                     bool good = true;
                     for( int i = 1; i < line_path.size(); ++i ) {
                         if( !transition_cost( *this, line_path[i - 1], line_path[i], settings,
-                                              *pathfinding_cache_ ).has_value() ) {
+                                              *pathfinding_cache() ).has_value() ) {
                             good = false;
                             break;
                         }
@@ -537,12 +522,12 @@ std::vector<tripoint_bub_ms> map::route( const tripoint_bub_ms &from, const trip
         return {};
     }
 
-    return pathfinder_->find_path( settings.rb_settings(), from, to,
+    return pathfinder()->find_path( settings.rb_settings(), from, to,
     [this, &settings]( const tripoint_bub_ms & p ) {
-        return position_cost( *this, p, settings, *pathfinding_cache_ );
+        return position_cost( *this, p, settings, *pathfinding_cache() );
     },
     [this, &settings]( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
-        return transition_cost( *this, from, to, settings, *pathfinding_cache_ );
+        return transition_cost( *this, from, to, settings, *pathfinding_cache() );
     },
     []( const tripoint_bub_ms & from, const tripoint_bub_ms & to ) {
         return 100 * octile_distance( from, to );

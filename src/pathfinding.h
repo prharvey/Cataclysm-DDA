@@ -10,53 +10,66 @@
 
 class map;
 
-struct FirstElementGreaterThan {
-    template <typename T, typename... Ts>
-    bool operator()( const std::tuple<T, Ts...> &lhs, const std::tuple<T, Ts...> &rhs ) const {
-        return std::get<0>( lhs ) > std::get<0>( rhs );
-    }
+template <typename Node, typename Cost = int, typename VisitedSet = std::unordered_set<Node>, typename BestPathMap = std::unordered_map<Node, std::pair<Cost, Node>>>
+          class AStarState
+{
+public:
+    void reset( const Node &start, const Cost &cost );
+
+    std::optional<Node> get_next( const Cost &max );
+
+    template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
+    void generate_neighbors( const Node &current, StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn,
+                             HeuristicFn &&heuristic_fn, NeighborsFn &&neighbors_fn );
+
+    bool has_path_to( const Node &end ) const;
+
+    Cost path_cost( const Node &end ) const;
+
+    std::vector<Node> path_to( const Node &end ) const;
+
+private:
+    struct FirstElementGreaterThan {
+        template <typename T, typename... Ts>
+        bool operator()( const std::tuple<T, Ts...> &lhs, const std::tuple<T, Ts...> &rhs ) const {
+            return std::get<0>( lhs ) > std::get<0>( rhs );
+        }
+    };
+
+    using FrontierNode = std::tuple<Cost, Node>;
+    using FrontierQueue =
+        std::priority_queue<FrontierNode, std::vector<FrontierNode>, FirstElementGreaterThan>;
+
+    VisitedSet visited_;
+    BestPathMap best_paths_;
+    FrontierQueue frontier_;
 };
 
-template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename BestStateMap = std::unordered_map<State, std::pair<Cost, State>>>
+template <typename Node, typename Cost = int, typename VisitedSet = std::unordered_set<Node>, typename BestStateMap = std::unordered_map<Node, std::pair<Cost, Node>>>
           class AStarPathfinder
 {
 public:
     template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-    std::vector<State> find_path( const Cost &max, const State &from, const State &to,
-                                  StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
-                                  NeighborsFn &&neighbors_fn );
+    std::vector<Node> find_path( const Cost &max, const Node &from, const Node &to,
+                                 StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
+                                 NeighborsFn &&neighbors_fn );
 
 private:
-    VisitedSet visited_;
-    BestStateMap best_state_;
+    AStarState<Node, Cost, VisitedSet, BestStateMap> state_;
 };
 
-template <typename State, typename Cost = int, typename VisitedSet = std::unordered_set<State>, typename BestStateMap = std::unordered_map<State, std::pair<Cost, State>>>
+template <typename Node, typename Cost = int, typename VisitedSet = std::unordered_set<Node>, typename BestStateMap = std::unordered_map<Node, std::pair<Cost, Node>>>
           class BidirectionalAStarPathfinder
 {
 public:
     template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-    std::vector<State> find_path( const Cost &max, const State &from, const State &to,
-                                  StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
-                                  NeighborsFn &&neighbors_fn );
+    std::vector<Node> find_path( const Cost &max, const Node &from, const Node &to,
+                                 StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
+                                 NeighborsFn &&neighbors_fn );
 
 private:
-    using FrontierNode = std::tuple<Cost, State>;
-    using Queue =
-        std::priority_queue< FrontierNode, std::vector< FrontierNode>, FirstElementGreaterThan>;
-
-    static std::optional<State> next_state( Queue &queue, VisitedSet &visited, const Cost &max );
-
-    template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-    static void generate( const State &current, Queue &queue, VisitedSet &visited,
-                          BestStateMap &best_state,
-                          StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
-                          NeighborsFn &&neighbors_fn );
-
-    VisitedSet f_visited_;
-    BestStateMap f_best_state_;
-    VisitedSet b_visited_;
-    BestStateMap b_best_state_;
+    AStarState<Node, Cost, VisitedSet, BestStateMap> forward_;
+    AStarState<Node, Cost, VisitedSet, BestStateMap> backward_;
 };
 
 
@@ -235,6 +248,13 @@ class RealityBubblePathfindingSettings
             allow_flying_ = v;
         }
 
+        bool allow_falling() const {
+            return allow_falling_;
+        }
+        void set_allow_falling( bool v = true ) {
+            allow_falling_ = v;
+        }
+
         bool allow_stairways() const {
             return allow_stairways_;
         }
@@ -258,6 +278,7 @@ class RealityBubblePathfindingSettings
 
     private:
         bool allow_flying_ = false;
+        bool allow_falling_ = false;
         bool allow_stairways_ = false;
         int max_cost_ = 0;
         PathfindingFlags avoid_mask_ = PathfindingFlag::Air | PathfindingFlag::Impassable;
@@ -306,78 +327,7 @@ class RealityBubblePathfinder
             }
         };
 
-        /*
-        template <typename T, typename I, I kMax>
-        struct FastIntSet {
-            bool emplace( T p );
-
-            void clear() {
-                in.clear();
-            }
-
-            auto begin() const {
-                return in.begin();
-            }
-
-            auto end() const {
-                return in.end();
-            }
-
-            std::size_t count( T p ) const;
-
-            std::vector<T> in;
-            std::array<I, kMax> visited;
-        };*/
-
-        struct FastTripointSet {
-            static constexpr std::size_t kBits = MAPSIZE_X * MAPSIZE_Y;
-            static constexpr std::size_t kWords = kBits / 64 + 1;
-            static constexpr std::uint64_t kBitMask = 64 - 1;
-
-            static constexpr std::size_t get_word( std::uint64_t index ) {
-                return index / 64;
-            }
-
-            static constexpr std::uint64_t get_bit( std::uint64_t index ) {
-                return index & kBitMask;
-            }
-
-            bool emplace( PackedTripoint p ) {
-                dirty_[p.z] = true;
-                std::uint64_t &word = words_[p.z][p.y][get_word( p.x )];
-                const std::uint64_t bit = get_bit( p.x );
-                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
-                const bool has_bit = word & mask;
-                word |= mask;
-                return !has_bit;
-            }
-
-            void clear() {
-                for( int z = 0; z < OVERMAP_LAYERS; ++z ) {
-                    if( !dirty_[z] ) {
-                        continue;
-                    }
-                    dirty_[z] = false;
-                    for( int y = 0; y < MAPSIZE_Y; ++y ) {
-                        for( int x = 0; x < kWords; ++x ) {
-                            words_[z][y][x] = 0;
-                        }
-                    }
-                }
-            }
-
-            std::size_t count( PackedTripoint p ) const {
-                const std::uint64_t word = words_[p.z][p.y][get_word( p.x )];
-                const std::uint64_t bit = get_bit( p.x );
-                const std::uint64_t mask = std::uint64_t{ 1 } << bit;
-                return word & mask;
-            }
-
-            std::array<bool, OVERMAP_LAYERS> dirty_ = {};
-            std::array<std::array<std::array<std::uint64_t, kWords>, MAPSIZE_Y>, OVERMAP_LAYERS> words_ = {};
-        };
-
-        class FastTripointSet2
+        class FastTripointSet
         {
             public:
                 bool emplace( PackedTripoint p ) {
@@ -407,54 +357,6 @@ class RealityBubblePathfinder
                 std::array<std::bitset<MAPSIZE_X *MAPSIZE_Y>, OVERMAP_LAYERS> set_ = {};
         };
 
-        class FastTripointSet3
-        {
-            public:
-                static constexpr std::size_t kBits = MAPSIZE_X * MAPSIZE_Y;
-                static constexpr std::size_t kWords = kBits / 64 + 1;
-                static constexpr std::uint64_t kBitMask = 64 - 1;
-
-                static constexpr std::size_t get_word( std::size_t index ) {
-                    return index / 64;
-                }
-
-                static constexpr std::uint64_t get_bit_mask( std::uint64_t index ) {
-                    return std::uint64_t{ 1 } << ( index & kBitMask );
-                }
-
-                bool emplace( PackedTripoint p ) {
-                    dirty_[p.z] = true;
-                    const std::size_t i = p.y * MAPSIZE_X + p.x;
-                    std::uint64_t &word = words_[p.z][get_word( i )];
-                    const std::uint64_t bit = get_bit_mask( i );
-                    const bool was_missing = !( word & bit );
-                    word |= bit;
-                    return was_missing;
-                }
-
-                void clear() {
-                    for( int z = 0; z < OVERMAP_LAYERS; ++z ) {
-                        if( !dirty_[z] ) {
-                            continue;
-                        }
-                        dirty_[z] = false;
-                        words_[z].fill( 0 );
-                    }
-                }
-
-                std::size_t count( PackedTripoint p ) const {
-                    const std::size_t i = p.y * MAPSIZE_X + p.x;
-                    std::uint64_t word = words_[p.z][get_word( i )];
-                    const std::uint64_t bit = get_bit_mask( i );
-                    const bool is_set = word & bit;
-                    return is_set;
-                }
-
-            private:
-                std::array<bool, OVERMAP_LAYERS> dirty_ = {};
-                std::array<std::array<std::uint64_t, kWords>, OVERMAP_LAYERS> words_ = {};
-        };
-
         struct FastBestStateMap {
             std::pair<std::pair<int, PackedTripoint>*, bool> try_emplace( PackedTripoint child,
                     int cost, PackedTripoint parent ) {
@@ -475,16 +377,28 @@ class RealityBubblePathfinder
                 in.clear();
             }
 
+            const std::pair<int, PackedTripoint> &at( PackedTripoint child ) const {
+                return best_states[child.z][child.y][child.x];
+            }
+
             std::pair<int, PackedTripoint> &operator[]( PackedTripoint child ) {
                 return *try_emplace( child, 0, child ).first;
             }
 
-            FastTripointSet2 in;
+            FastTripointSet in;
             RealityBubbleArray<std::pair<int, PackedTripoint>> best_states;
         };
 
+        template <typename AStar, typename PositionCostFn, typename MoveCostFn, typename HeuristicFn>
+        std::vector<tripoint_bub_ms> find_path_impl( AStar &impl,
+                const RealityBubblePathfindingSettings &settings,
+                const tripoint_bub_ms &from, const tripoint_bub_ms &to,
+                PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn, HeuristicFn &&heuristic_fn );
+
         RealityBubblePathfindingCache *cache_;
-        BidirectionalAStarPathfinder<PackedTripoint, int, FastTripointSet2, FastBestStateMap> astar_;
+        AStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestStateMap> astar_;
+        BidirectionalAStarPathfinder<PackedTripoint, int, FastTripointSet, FastBestStateMap>
+        bidirectional_astar_;
 };
 
 class PathfindingSettings
@@ -498,6 +412,14 @@ class PathfindingSettings
         }
         void set_avoid_air( bool v = true ) {
             set( PathfindingFlag::Air, v );
+        }
+
+        bool avoid_falling() const {
+            return !rb_settings_.allow_falling();
+        }
+        void set_avoid_falling( bool v = true ) {
+            set_avoid_air( v );
+            rb_settings_.set_allow_falling( !v );
         }
 
         bool avoid_unsheltered() const {
@@ -670,6 +592,14 @@ class PathfindingSettings
             return rb_settings_.avoid_mask();
         }
 
+        bool avoid_bashing() const {
+            return avoid_bashing_;
+        }
+        void set_avoid_bashing( bool v = true ) {
+            avoid_bashing_ = v;
+            maybe_set_avoid_obstacle();
+        }
+
         int bash_strength() const {
             return bash_strength_;
         }
@@ -700,8 +630,8 @@ class PathfindingSettings
 
         void maybe_set_avoid_obstacle() {
             // Check if we can short circuit checking obstacles. Significantly faster if so.
-            set( PathfindingFlag::Obstacle, !is_digging() && climb_cost() <= 0 && avoid_climbing() &&
-                 avoid_opening_doors() && bash_strength() <= 0 );
+            set( PathfindingFlag::Obstacle, !is_digging() && ( climb_cost() <= 0 || avoid_climbing() ) &&
+                 avoid_opening_doors() && ( avoid_bashing() || bash_strength() <= 0 ) );
         }
 
         int max_distance_ = 0;
@@ -715,6 +645,7 @@ class PathfindingSettings
 
         RealityBubblePathfindingSettings rb_settings_;
 
+        bool avoid_bashing_ = false;
         bool avoid_climbing_ = false;
         bool avoid_opening_doors_ = false;
         bool avoid_unlocking_doors_ = false;
@@ -724,159 +655,158 @@ class PathfindingSettings
 
 // Implementation Details
 
-extern int pf_total;
-extern int pf_found;
-extern int pf_not_found;
-extern int pf_not_found_early;
-
-extern int pop_total;
-extern int pop_ok;
-extern int pop_bad_too_far;
-extern int pop_bad_visited;
-
-extern int next_total;
-extern int next_ok;
-extern int next_bad_visited;
-extern int next_bad_state;
-extern int next_bad_transition;
-extern int next_bad_higher_cost_before;
-extern int next_bad_higher_cost_after;
-
-template <typename State, typename Cost, typename VisitedSet, typename BestStateMap>
-template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-std::vector<State> AStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_path(
-    const Cost &max_cost, const State &from, const State &to, StateCostFn &&s_cost_fn,
-    TransitionCostFn &&t_cost_fn,
-    HeuristicFn &&heuristic_fn, NeighborsFn &&neighbors_fn )
+template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
+void AStarState<Node, Cost, VisitedSet, BestPathMap>::reset( const Node &start, const Cost &cost )
 {
-    using FrontierNode = std::tuple<Cost, State>;
-    std::priority_queue< FrontierNode, std::vector< FrontierNode>, FirstElementGreaterThan> frontier;
-    std::vector<State> result;
     visited_.clear();
-    best_state_.clear();
+    best_paths_.clear();
 
-    ++pf_total;
+    // No clear method...
+    frontier_ = FrontierQueue();
 
-    if( !s_cost_fn( from ) || !s_cost_fn( to ) ) {
-        ++pf_not_found_early;
-        return result;
-    }
+    best_paths_.try_emplace( start, 0, start );
+    frontier_.emplace( cost, start );
+}
 
-    best_state_.try_emplace( from, 0, from );
-    frontier.emplace( heuristic_fn( from, to ), from );
-    do {
-        auto [estimated_cost, current_state] = frontier.top();
-        frontier.pop();
+template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
+bool AStarState<Node, Cost, VisitedSet, BestPathMap>::has_path_to( const Node &end ) const
+{
+    return best_paths_.count( end );
+}
 
-        ++pop_total;
+template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
+Cost AStarState<Node, Cost, VisitedSet, BestPathMap>::path_cost( const Node &end ) const
+{
+    return best_paths_.at( end ).first;
+}
 
-        if( estimated_cost >= max_cost ) {
-            ++pop_bad_too_far;
-            break;
+template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
+std::vector<Node> AStarState<Node, Cost, VisitedSet, BestPathMap>::path_to( const Node &end ) const
+{
+    std::vector<Node> result;
+    if( has_path_to( end ) ) {
+        Node current = end;
+        while( best_paths_.at( current ).first != 0 ) {
+            result.push_back( current );
+            current = best_paths_.at( current ).second;
         }
-
-        if( !visited_.emplace( current_state ) ) {
-            ++pop_bad_visited;
-            continue;
-        }
-
-        ++pop_ok;
-
-        if( current_state == to ) {
-            ++pf_found;
-            while( current_state != from ) {
-                result.push_back( current_state );
-                current_state = best_state_[current_state].second;
-            }
-            std::reverse( result.begin(), result.end() );
-            break;
-        }
-
-        const auto& [current_cost, current_parent] = best_state_[current_state];
-        neighbors_fn( current_parent, current_state, [this, &frontier, &s_cost_fn, &t_cost_fn,
-                            &heuristic_fn, &current_state,
-              current_cost, to]( const State & neighbour ) {
-            ++next_total;
-            if( visited_.count( neighbour ) ) {
-                ++next_bad_visited;
-                return;
-            }
-            if( const std::optional<Cost> s_cost = s_cost_fn( neighbour ) ) {
-                if( const std::optional<Cost> t_cost = t_cost_fn( current_state, neighbour ) ) {
-                    const auto& [iter, _] = best_state_.try_emplace( neighbour, std::numeric_limits<Cost>::max(),
-                                            State() );
-                    auto& [best_cost, parent] = *iter;
-                    const Cost new_cost = current_cost + *s_cost + *t_cost;
-                    if( new_cost < best_cost ) {
-                        ++next_ok;
-                        best_cost = new_cost;
-                        parent = current_state;
-                        const Cost estimated_cost = new_cost + heuristic_fn( neighbour, to );
-                        frontier.emplace( estimated_cost, neighbour );
-                    } else {
-                        ++next_bad_higher_cost_after;
-                    }
-                } else {
-                    ++next_bad_transition;
-                }
-            } else {
-                ++next_bad_state;
-                visited_.emplace( neighbour );
-            }
-        } );
-    } while( !frontier.empty() );
-
-    if( result.empty() ) {
-        ++pf_not_found;
+        std::reverse( result.begin(), result.end() );
     }
     return result;
 }
 
+template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
+std::optional<Node> AStarState<Node, Cost, VisitedSet, BestPathMap>::get_next( const Cost &max )
+{
+    while( !frontier_.empty() ) {
+        auto [cost, current] = frontier_.top();
+        frontier_.pop();
 
-template <typename State, typename Cost, typename VisitedSet, typename BestStateMap>
+        if( cost >= max ) {
+            return std::nullopt;
+        }
+
+        if( !visited_.emplace( current ) ) {
+            continue;
+        }
+        return current;
+    }
+    return std::nullopt;
+}
+
+template <typename Node, typename Cost, typename VisitedSet, typename BestPathMap>
 template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-std::vector<State> BidirectionalAStarPathfinder<State, Cost, VisitedSet, BestStateMap>::find_path(
-    const Cost &max_cost, const State &from, const State &to, StateCostFn &&s_cost_fn,
+void AStarState<Node, Cost, VisitedSet, BestPathMap>::generate_neighbors(
+    const Node &current, StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn,
+    HeuristicFn &&heuristic_fn,
+    NeighborsFn &&neighbors_fn )
+{
+    const auto& [current_cost, current_parent] = best_paths_[current];
+    neighbors_fn( current_parent, current, [this, &s_cost_fn, &t_cost_fn, &heuristic_fn, &current,
+          current_cost]( const Node & neighbour ) {
+        if( visited_.count( neighbour ) ) {
+            return;
+        }
+        if( const std::optional<Cost> s_cost = s_cost_fn( neighbour ) ) {
+            if( const std::optional<Cost> t_cost = t_cost_fn( current, neighbour ) ) {
+                const auto& [iter, _] = best_paths_.try_emplace( neighbour, std::numeric_limits<Cost>::max(),
+                                        Node() );
+                auto& [best_cost, parent] = *iter;
+                const Cost new_cost = current_cost + *s_cost + *t_cost;
+                if( new_cost < best_cost ) {
+                    best_cost = new_cost;
+                    parent = current;
+                    const Cost estimated_cost = new_cost + heuristic_fn( neighbour );
+                    frontier_.emplace( estimated_cost, neighbour );
+                }
+            }
+        } else {
+            visited_.emplace( neighbour );
+        }
+    } );
+}
+
+template <typename Node, typename Cost, typename VisitedSet, typename BestStateMap>
+template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
+std::vector<Node> AStarPathfinder<Node, Cost, VisitedSet, BestStateMap>::find_path(
+    const Cost &max_cost, const Node &from, const Node &to, StateCostFn &&s_cost_fn,
     TransitionCostFn &&t_cost_fn,
     HeuristicFn &&heuristic_fn, NeighborsFn &&neighbors_fn )
 {
-    Queue f_frontier;
-    Queue b_frontier;
-    std::vector<State> result;
-
-    f_visited_.clear();
-    f_best_state_.clear();
-
-    b_visited_.clear();
-    b_best_state_.clear();
-
-    ++pf_total;
-
     if( !s_cost_fn( from ) || !s_cost_fn( to ) ) {
-        ++pf_not_found_early;
-        return result;
+        return {};
     }
 
-    f_best_state_.try_emplace( from, 0, from );
-    f_frontier.emplace( heuristic_fn( from, to ), from );
-    b_best_state_.try_emplace( to, 0, to );
-    b_frontier.emplace( heuristic_fn( to, from ), to );
+    state_.reset( from, heuristic_fn( from, to ) );
+    while( const std::optional<Node> current = state_.get_next( max_cost ) ) {
+        if( *current == to ) {
+            return state_.path_to( to );
+        }
+        state_.generate_neighbors( *current, s_cost_fn, t_cost_fn, [&heuristic_fn,
+        to]( const Node & from ) {
+            return heuristic_fn( from, to );
+        }, neighbors_fn );
+    }
+    return {};
+}
+
+
+template <typename Node, typename Cost, typename VisitedSet, typename BestStateMap>
+template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
+std::vector<Node> BidirectionalAStarPathfinder<Node, Cost, VisitedSet, BestStateMap>::find_path(
+    const Cost &max_cost, const Node &from, const Node &to, StateCostFn &&s_cost_fn,
+    TransitionCostFn &&t_cost_fn,
+    HeuristicFn &&heuristic_fn, NeighborsFn &&neighbors_fn )
+{
+    if( !s_cost_fn( from ) || !s_cost_fn( to ) ) {
+        return {};
+    }
+
+    // The full cost is not used since that would result in paths that are up to 2x longer than
+    // intended. Half the cost cannot be used, since there is no guarantee that both searches
+    // proceed at the same pace. 2/3rds the cost is a fine balance between the two, and has the
+    // effect of the worst case still visiting less states than normal A*.
+    const Cost partial_max_cost = 2 * max_cost / 3;
+    forward_.reset( from, heuristic_fn( from, to ) );
+    backward_.reset( to, heuristic_fn( to, from ) );
     for( ;; ) {
-        const std::optional<State> f_current_state = next_state( f_frontier, f_visited_, max_cost / 2 );
+        const std::optional<Node> f_current_state = forward_.get_next( partial_max_cost );
         if( !f_current_state ) {
             break;
         }
-        const std::optional<State> b_current_state = next_state( b_frontier, b_visited_, max_cost / 2 );
+        const std::optional<Node> b_current_state = backward_.get_next( partial_max_cost );
         if( !b_current_state ) {
             break;
         }
 
-        bool f_links = b_best_state_.count( *f_current_state );
-        bool b_links = f_best_state_.count( *b_current_state );
+        bool f_links = backward_.has_path_to( *f_current_state );
+        bool b_links = forward_.has_path_to( *b_current_state );
 
         if( f_links && b_links ) {
-            const Cost f_cost = f_best_state_[*f_current_state].first + b_best_state_[*f_current_state].first;
-            const Cost b_cost = f_best_state_[*b_current_state].first + b_best_state_[*b_current_state].first;
+            const Cost f_cost = forward_.path_cost( *f_current_state ) + backward_.path_cost(
+                                    *f_current_state );
+            const Cost b_cost = forward_.path_cost( *b_current_state ) + backward_.path_cost(
+                                    *b_current_state );
             if( b_cost < f_cost ) {
                 f_links = false;
             } else {
@@ -885,137 +815,33 @@ std::vector<State> BidirectionalAStarPathfinder<State, Cost, VisitedSet, BestSta
         }
 
         if( f_links || b_links ) {
-            const std::optional<State> &good = f_links ? f_current_state : b_current_state;
-            State current_state = *good;
-            while( current_state != from ) {
-                result.push_back( current_state );
-                current_state = f_best_state_[current_state].second;
+            const Node &midpoint = f_links ? *f_current_state : *b_current_state;
+            std::vector<Node> forward_path = forward_.path_to( midpoint );
+            std::vector<Node> backward_path = backward_.path_to( midpoint );
+            if( backward_path.empty() ) {
+                return forward_path;
             }
-            std::reverse( result.begin(), result.end() );
-            current_state = *good;
-            while( current_state != to ) {
-                current_state = b_best_state_[current_state].second;
-                result.push_back( current_state );
-            }
-            pf_found++;
-            break;
+            backward_path.pop_back();
+            std::for_each( backward_path.rbegin(), backward_path.rend(), [&forward_path]( const Node & node ) {
+                forward_path.push_back( node );
+            } );
+            forward_path.push_back( to );
+            return forward_path;
         }
 
-        generate( *f_current_state, f_frontier, f_visited_, f_best_state_, s_cost_fn,
-        t_cost_fn, [&heuristic_fn, &to]( const State & from ) {
+        forward_.generate_neighbors( *f_current_state,  s_cost_fn, t_cost_fn, [&heuristic_fn,
+        &to]( const Node & from ) {
             return heuristic_fn( from, to );
         }, neighbors_fn );
-        generate( *b_current_state, b_frontier, b_visited_, b_best_state_,
-        s_cost_fn, [&t_cost_fn]( const State & from, const State & to ) {
+        backward_.generate_neighbors( *b_current_state,  s_cost_fn, [&t_cost_fn]( const Node & from,
+        const Node & to ) {
             return t_cost_fn( to, from );
-        }, [&heuristic_fn, &from]( const State & to ) {
+        }, [&heuristic_fn, &from]( const Node & to ) {
             return heuristic_fn( to, from );
         }, neighbors_fn );
     }
-
-    if( result.empty() ) {
-        ++pf_not_found;
-    }
-    return result;
+    return {};
 }
-
-template <typename State, typename Cost, typename VisitedSet, typename BestStateMap>
-std::optional<State>
-BidirectionalAStarPathfinder<State, Cost, VisitedSet, BestStateMap>::next_state( Queue &frontier,
-        VisitedSet &visited, const Cost &max )
-{
-    while( !frontier.empty() ) {
-        ++pop_total;
-        auto [estimated_cost, current_state] = frontier.top();
-        frontier.pop();
-
-        if( estimated_cost >= max ) {
-            ++pop_bad_too_far;
-            return std::nullopt;
-        }
-
-        if( !visited.emplace( current_state ) ) {
-            ++pop_bad_visited;
-            continue;
-        }
-        ++pop_ok;
-        return current_state;
-    }
-    return std::nullopt;
-}
-
-
-template <typename State, typename Cost, typename VisitedSet, typename BestStateMap>
-template <typename StateCostFn, typename TransitionCostFn, typename HeuristicFn, typename NeighborsFn>
-void BidirectionalAStarPathfinder<State, Cost, VisitedSet, BestStateMap>::generate(
-    const State &current, Queue &frontier, VisitedSet &visited, BestStateMap &best_state,
-    StateCostFn &&s_cost_fn, TransitionCostFn &&t_cost_fn, HeuristicFn &&heuristic_fn,
-    NeighborsFn &&neighbors_fn )
-{
-    const auto& [current_cost, current_parent] = best_state[current];
-    neighbors_fn( current_parent, current, [&frontier, &visited, &best_state, &s_cost_fn, &t_cost_fn,
-               &heuristic_fn, &current, current_cost]( const State & neighbour ) {
-        ++next_total;
-        if( visited.count( neighbour ) ) {
-            ++next_bad_visited;
-            return;
-        }
-        if( const std::optional<Cost> s_cost = s_cost_fn( neighbour ) ) {
-            if( const std::optional<Cost> t_cost = t_cost_fn( current, neighbour ) ) {
-                const auto& [iter, _] = best_state.try_emplace( neighbour, std::numeric_limits<Cost>::max(),
-                                        State() );
-                auto& [best_cost, parent] = *iter;
-                const Cost new_cost = current_cost + *s_cost + *t_cost;
-                if( new_cost < best_cost ) {
-                    ++next_ok;
-                    best_cost = new_cost;
-                    parent = current;
-                    const Cost estimated_cost = new_cost + heuristic_fn( neighbour );
-                    frontier.emplace( estimated_cost, neighbour );
-                } else {
-                    ++next_bad_higher_cost_after;
-                }
-            } else {
-                ++next_bad_transition;
-            }
-        } else {
-            ++next_bad_state;
-            visited.emplace( neighbour );
-        }
-    } );
-}
-
-/*
-template <typename T, typename I, I kMax>
-inline bool RealityBubblePathfinder::FastIntSet<T, I, kMax>::emplace( T i )
-{
-    const I test = visited[i];
-    if( test >= in.size() || in[test] != i ) {
-        visited[i] = in.size();
-        in.push_back( i );
-        return true;
-    }
-    return false;
-}
-
-template <typename T, typename I, I kMax>
-inline std::size_t RealityBubblePathfinder::FastIntSet<T, I, kMax>::count( T i ) const
-{
-    const I test = visited[i];
-    return test < in.size() && in[test] == i;
-}*/
-
-/*
-inline std::pair<int, tripoint_bub_ms> &RealityBubblePathfinder::FastBestStateMap::operator[](
-    const tripoint_bub_ms &child )
-{
-    std::pair<int, tripoint_bub_ms> &result = best_states[child.z() +
-            OVERMAP_DEPTH][child.y()][child.x()];
-    if( in.emplace( child ) ) {
-        result.first = 0;
-    }
-    return result;
-}*/
 
 template <typename PositionCostFn, typename MoveCostFn, typename HeuristicFn>
 std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
@@ -1023,15 +849,35 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
         const tripoint_bub_ms &to, PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn,
         HeuristicFn &&heuristic_fn )
 {
-    const int pad = 16;
-    int min_x_bound = std::max( std::min( to.x(), from.x() ) - pad, 0 );
-    int max_x_bound = std::min( std::max( to.x(), from.x() ) + pad, MAPSIZE_X - 1 );
-    int min_y_bound = std::max( std::min( to.y(), from.y() ) - pad, 0 );
-    int max_y_bound = std::min( std::max( to.y(), from.y() ) + pad, MAPSIZE_Y - 1 );
-    int min_z_bound = std::max( std::min( to.z(), from.z() ) + OVERMAP_DEPTH, 0 );
-    int max_z_bound = std::min( std::max( to.z(), from.z() ) + OVERMAP_DEPTH, OVERMAP_LAYERS - 1 );
+    // The bidirectional pathfinder doesn't handle paths generated by falling, so we have to fall
+    // back to normal A* in this case.
+    const bool might_fall = !settings.allow_flying() && settings.allow_falling();
+    if( might_fall ) {
+        return find_path_impl( astar_, settings, from, to, std::forward<PositionCostFn>( p_cost_fn ),
+                               std::forward<MoveCostFn>( m_cost_fn ), std::forward<HeuristicFn>( heuristic_fn ) );
+    } else {
+        return find_path_impl( bidirectional_astar_, settings, from, to,
+                               std::forward<PositionCostFn>( p_cost_fn ), std::forward<MoveCostFn>( m_cost_fn ),
+                               std::forward<HeuristicFn>( heuristic_fn ) );
+    }
+}
 
-    std::vector<PackedTripoint> path = astar_.find_path( settings.max_cost(), from, to,
+template <typename AStarImpl, typename PositionCostFn, typename MoveCostFn, typename HeuristicFn>
+std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl &impl, const
+        RealityBubblePathfindingSettings &settings, const tripoint_bub_ms &from,
+        const tripoint_bub_ms &to, PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn,
+        HeuristicFn &&heuristic_fn )
+{
+    const int pad = 16;
+    const int min_x_bound = std::max( std::min( to.x(), from.x() ) - pad, 0 );
+    const int max_x_bound = std::min( std::max( to.x(), from.x() ) + pad, MAPSIZE_X - 1 );
+    const int min_y_bound = std::max( std::min( to.y(), from.y() ) - pad, 0 );
+    const int max_y_bound = std::min( std::max( to.y(), from.y() ) + pad, MAPSIZE_Y - 1 );
+    const int min_z_bound = std::max( std::min( to.z(), from.z() ) + OVERMAP_DEPTH, 0 );
+    const int max_z_bound = std::min( std::max( to.z(), from.z() ) + OVERMAP_DEPTH,
+                                      OVERMAP_LAYERS - 1 );
+
+    std::vector<PackedTripoint> path = impl.find_path( settings.max_cost(), from, to,
                                        std::forward<PositionCostFn>( p_cost_fn ), std::forward<MoveCostFn>( m_cost_fn ),
                                        std::forward<HeuristicFn>( heuristic_fn ), [this,
                                                &settings, min_x_bound, max_x_bound, min_y_bound, max_y_bound, min_z_bound,

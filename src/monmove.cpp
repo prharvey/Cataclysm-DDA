@@ -162,9 +162,11 @@ static bool z_is_valid( int z )
     return z >= -OVERMAP_DEPTH && z <= OVERMAP_HEIGHT;
 }
 
-PathfindingSettings monster::get_pathfinding_settings() const
+PathfindingSettings monster::get_pathfinding_settings( bool avoid_bashing ) const
 {
     PathfindingSettings settings = type->path_settings.to_new_pathfinding_settings();
+
+    settings.set_avoid_bashing( avoid_bashing );
 
     settings.set_is_digging( digging() );
 
@@ -216,10 +218,10 @@ PathfindingSettings monster::get_pathfinding_settings() const
 
     settings.set_is_flying( can_fly );
     if( can_fly ) {
-        settings.set_avoid_air( false );
+        settings.set_avoid_falling( false );
     } else {
         // Don't throw ourselves off cliffs if we have a concept of falling
-        settings.set_avoid_air( avoid_fall );
+        settings.set_avoid_falling( avoid_fall );
     }
 
     // Don't enter open pits ever unless tiny, can fly or climb well
@@ -1047,7 +1049,7 @@ void monster::move()
     bool moved = false;
     tripoint destination;
 
-    const PathfindingSettings settings = get_pathfinding_settings();
+    PathfindingSettings settings = get_pathfinding_settings();
     bool try_to_move = false;
     creature_tracker &creatures = get_creature_tracker();
     for( const tripoint &dest : here.points_in_radius( pos(), 1 ) ) {
@@ -1096,9 +1098,12 @@ void monster::move()
                 // We need a new path
                 path.clear();
                 mon_routes_total++;
+                // Temporarily allow bashing to find a path through bashable terrain.
+                settings.set_avoid_bashing( false );
                 for( const tripoint_bub_ms &p : here.route( pos_bub(), tripoint_bub_ms( local_dest ), settings ) ) {
                     path.push_back( p.raw() );
                 }
+                settings.set_avoid_bashing( true );
                 if( path.empty() ) {
                     mon_routes_missing++;
                 } else {

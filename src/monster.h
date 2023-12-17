@@ -199,18 +199,21 @@ class monster : public Creature
         void set_patrol_route( const std::vector<point> &patrol_pts_rel_ms );
 
         /**
-         * Checks whether we can move to/through p. This does account for bashing.
+         * Checks whether we can move to/through p. This does not account for bashing.
          *
          * This is used in pathfinding and ONLY checks the terrain. It ignores players
          * and monsters, which might only block this tile temporarily.
          *
-         * This uses the information from the latest call to update_pathfinding_settings().
+         * If called multiple times in a loop, prefer getting the settings separately and
+         * reusing them.
          */
         bool can_move_to( const tripoint &p ) const {
             return can_move_to( p, get_pathfinding_settings() );
         }
         bool can_move_to( const tripoint &p, const PathfindingSettings &settings ) const;
-        PathfindingSettings get_pathfinding_settings() const;
+
+        // Get the pathfinding settings for this monster.
+        PathfindingSettings get_pathfinding_settings( bool avoid_bashing = true ) const;
 
         // Returns true if the monster has a current goal
         bool has_dest() const;

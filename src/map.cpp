@@ -202,9 +202,6 @@ map::map( int mapsize, bool zlev ) : my_MAPSIZE( mapsize ), my_HALF_MAPSIZE( map
         grid.resize( static_cast<size_t>( my_MAPSIZE ) * my_MAPSIZE, nullptr );
     }
 
-    pathfinding_cache_ = std::make_unique<RealityBubblePathfindingCache>();
-    pathfinder_ = std::make_unique<RealityBubblePathfinder>( pathfinding_cache_.get() );
-
     dbg( D_INFO ) << "map::map(): my_MAPSIZE: " << my_MAPSIZE << " z-levels enabled:" << zlevels;
     traplocs.resize( trap::count() );
 }
@@ -10006,14 +10003,14 @@ const level_cache &map::access_cache( int zlev ) const
 
 void map::set_pathfinding_cache_dirty( const int zlev )
 {
-    if( inbounds_z( zlev ) ) {
+    if( pathfinding_cache_ && inbounds_z( zlev ) ) {
         pathfinding_cache_->invalidate( zlev );
     }
 }
 
 void map::set_pathfinding_cache_dirty( const tripoint_bub_ms &p )
 {
-    if( inbounds( p ) ) {
+    if( pathfinding_cache_ && inbounds( p ) ) {
         pathfinding_cache_->invalidate( p );
     }
 }
