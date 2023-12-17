@@ -901,8 +901,8 @@ std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path( const
     }
 }
 
-template <typename AStarImpl, typename PositionCostFn, typename MoveCostFn, typename HeuristicFn>
-std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStarImpl &impl, const
+template <typename AStar, typename PositionCostFn, typename MoveCostFn, typename HeuristicFn>
+std::vector<tripoint_bub_ms> RealityBubblePathfinder::find_path_impl( AStar &impl, const
         RealityBubblePathfindingSettings &settings, const tripoint_bub_ms &from,
         const tripoint_bub_ms &to, PositionCostFn &&p_cost_fn, MoveCostFn &&m_cost_fn,
         HeuristicFn &&heuristic_fn )
