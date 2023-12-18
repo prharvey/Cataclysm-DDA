@@ -515,10 +515,6 @@ static void flood_fill_zone( Creature &origin )
     }
 }
 
-int mon_routes_total = 0;
-int mon_routes_ok = 0;
-int mon_routes_missing = 0;
-
 void monster::plan()
 {
     const auto &factions = g->critter_tracker->factions();
@@ -1097,18 +1093,12 @@ void monster::move()
                 ( path.empty() || rl_dist( pos(), path.front() ) >= 2 || path.back() != local_dest ) ) {
                 // We need a new path
                 path.clear();
-                mon_routes_total++;
                 // Temporarily allow bashing to find a path through bashable terrain.
                 settings.set_avoid_bashing( false );
                 for( const tripoint_bub_ms &p : here.route( pos_bub(), tripoint_bub_ms( local_dest ), settings ) ) {
                     path.push_back( p.raw() );
                 }
                 settings.set_avoid_bashing( true );
-                if( path.empty() ) {
-                    mon_routes_missing++;
-                } else {
-                    mon_routes_ok++;
-                }
             }
 
             // Try to respect old paths, even if we can't pathfind at the moment
