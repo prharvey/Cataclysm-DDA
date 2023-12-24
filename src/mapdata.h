@@ -482,11 +482,11 @@ struct map_data_common_t {
         */
         std::array<int, NUM_SEASONS> symbol_;
 
-        bool can_examine( const tripoint &examp ) const;
+        bool can_examine( const tripoint_bub_ms_ib&examp ) const;
         bool has_examine( iexamine_examine_function func ) const;
         bool has_examine( const std::string &action ) const;
         void set_examine( iexamine_functions func );
-        void examine( Character &, const tripoint & ) const;
+        void examine( Character &, const tripoint_bub_ms_ib& ) const;
 
         int light_emitted = 0;
         // The amount of movement points required to pass this terrain by default.

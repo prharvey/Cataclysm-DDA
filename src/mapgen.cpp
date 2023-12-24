@@ -6422,6 +6422,19 @@ void map::apply_faction_ownership( const point &p1, const point &p2, const facti
     }
 }
 
+/**
+ * Gets spawn_rate value for item category of 'itm'.
+ * If spawn_rate is more than or equal to 1.0, it will use roll_remainder on it.
+*/
+
+static float item_category_spawn_rate(const item& itm)
+{
+    const item_category_id& cat = itm.get_category_of_contents().id;
+    const float spawn_rate = cat.obj().get_spawn_rate();
+
+    return spawn_rate > 1.0f ? roll_remainder(spawn_rate) : spawn_rate;
+}
+
 // A chance of 100 indicates that items should always spawn,
 // the item group should be responsible for determining the amount of items.
 std::vector<item *> map::place_items(
@@ -6579,16 +6592,11 @@ void map::add_spawn(
     place_on_submap->spawns.push_back( tmp );
 }
 
-vehicle *map::add_vehicle( const vproto_id &type, const tripoint &p, const units::angle &dir,
+vehicle *map::add_vehicle( const vproto_id &type, const tripoint_bub_ms_ib &p, const units::angle &dir,
                            const int veh_fuel, const int veh_status, const bool merge_wrecks )
 {
     if( !type.is_valid() ) {
         debugmsg( "Nonexistent vehicle type: \"%s\"", type.c_str() );
-        return nullptr;
-    }
-    if( !inbounds( p ) ) {
-        dbg( D_WARNING ) << string_format( "Out of bounds add_vehicle t=%s d=%d p=%d,%d,%d",
-                                           type.str(), to_degrees( dir ), p.x, p.y, p.z );
         return nullptr;
     }
 

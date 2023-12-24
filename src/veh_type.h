@@ -458,7 +458,7 @@ class vpart_info
 };
 
 struct vehicle_item_spawn {
-    point pos;
+    point_rel_ms pos;
     int chance = 0;
     /** Chance [0-100%] for items to spawn with ammo (plus default magazine if necessary) */
     int with_ammo = 0;
@@ -477,7 +477,7 @@ struct vehicle_item_spawn {
 struct vehicle_prototype {
     public:
         struct part_def {
-            point pos;
+            point_rel_ms pos;
             vpart_id part;
             std::string variant;
             int with_ammo = 0;

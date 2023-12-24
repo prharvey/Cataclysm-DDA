@@ -99,17 +99,17 @@ class vpart_position
          * Returns the position of this part in the coordinates system that @ref game::m uses.
          * Postcondition (if the vehicle cache of the map is correct and if there are un-removed
          * parts at this positions):
-         * `g->m.veh_at( this->pos() )` (there is a vehicle there)
-         * `g->m.veh_at( this->pos() )->vehicle() == this->vehicle()` (it's this one)
+         * `g->m.veh_at( this->pos_bub() )` (there is a vehicle there)
+         * `g->m.veh_at( this->pos_bub() )->vehicle() == this->vehicle()` (it's this one)
          */
-        // Name chosen to match Creature::pos
-        tripoint pos() const;
+        // Name chosen to match Creature::pos_bub
+        tripoint_bub_ms pos_bub() const;
         /**
          * Returns the mount point: the point in the vehicles own coordinate system.
          * This system is independent of movement / rotation.
          */
         // TODO: change to return tripoint.
-        point mount() const;
+        point_rel_ms mount() const;
 
         // implementation required for using as std::map key
         bool operator<( const vpart_position &other ) const;

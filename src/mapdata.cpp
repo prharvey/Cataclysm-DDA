@@ -559,7 +559,7 @@ std::string map_data_common_t::name() const
     return name_.translated();
 }
 
-bool map_data_common_t::can_examine( const tripoint &examp ) const
+bool map_data_common_t::can_examine( const tripoint_bub_ms_ib&examp ) const
 {
     return examine_actor || examine_func.can_examine( examp );
 }

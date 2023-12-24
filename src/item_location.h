@@ -69,9 +69,7 @@ class item_location
         type where_recursive() const;
 
         /** Returns the position where the item is found */
-        // TODO: fix point types (remove position in favour of pos_bub)
-        tripoint position() const;
-        tripoint_bub_ms pos_bub() const;
+        tripoint_bub_ms_ib pos_bub() const;
 
         /** Describes the item location
          *  @param ch if set description is relative to character location */

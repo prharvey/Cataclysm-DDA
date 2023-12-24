@@ -15,15 +15,15 @@
 
 static const furn_str_id furn_f_console( "f_console" );
 
-void maptile_soa::swap_soa_tile( const point &p1, const point &p2 )
+void maptile_soa::swap_soa_tile( const point_sm_ms_ib&p1, const point_sm_ms_ib&p2 )
 {
-    std::swap( ter[p1.x][p1.y], ter[p2.x][p2.y] );
-    std::swap( frn[p1.x][p1.y], frn[p2.x][p2.y] );
-    std::swap( lum[p1.x][p1.y], lum[p2.x][p2.y] );
-    std::swap( itm[p1.x][p1.y], itm[p2.x][p2.y] );
-    std::swap( fld[p1.x][p1.y], fld[p2.x][p2.y] );
-    std::swap( trp[p1.x][p1.y], trp[p2.x][p2.y] );
-    std::swap( rad[p1.x][p1.y], rad[p2.x][p2.y] );
+    std::swap( ter[p1], ter[p2] );
+    std::swap( frn[p1], frn[p2] );
+    std::swap( lum[p1], lum[p2] );
+    std::swap( itm[p1], itm[p2] );
+    std::swap( fld[p1], fld[p2] );
+    std::swap( trp[p1], trp[p2] );
+    std::swap( rad[p1], rad[p2] );
 }
 
 submap::submap( submap && ) noexcept( map_is_noexcept ) = default;
@@ -31,7 +31,7 @@ submap::~submap() = default;
 
 submap &submap::operator=( submap && ) noexcept = default;
 
-void submap::clear_fields( const point &p )
+void submap::clear_fields( const point_sm_ms_ib&p )
 {
     field &f = get_field( p );
     field_count -= f.field_count();
@@ -55,7 +55,7 @@ static cosmetic_find_result make_result( bool b, int ndx )
     return result;
 }
 static cosmetic_find_result find_cosmetic(
-    const std::vector<submap::cosmetic_t> &cosmetics, const point &p, const std::string &type )
+    const std::vector<submap::cosmetic_t> &cosmetics, const point_sm_ms_ib&p, const std::string &type )
 {
     for( size_t i = 0; i < cosmetics.size(); ++i ) {
         if( cosmetics[i].pos == p && cosmetics[i].type == type ) {
@@ -65,12 +65,12 @@ static cosmetic_find_result find_cosmetic(
     return make_result( false, -1 );
 }
 
-bool submap::has_graffiti( const point &p ) const
+bool submap::has_graffiti( const point_sm_ms_ib&p ) const
 {
     return find_cosmetic( cosmetics, p, COSMETICS_GRAFFITI ).result;
 }
 
-const std::string &submap::get_graffiti( const point &p ) const
+const std::string &submap::get_graffiti( const point_sm_ms_ib&p ) const
 {
     const cosmetic_find_result fresult = find_cosmetic( cosmetics, p, COSMETICS_GRAFFITI );
     if( fresult.result ) {
@@ -79,7 +79,7 @@ const std::string &submap::get_graffiti( const point &p ) const
     return STRING_EMPTY;
 }
 
-void submap::set_graffiti( const point &p, const std::string &new_graffiti )
+void submap::set_graffiti( const point_sm_ms_ib&p, const std::string &new_graffiti )
 {
     ensure_nonuniform();
     // Find signage at p if available
@@ -91,7 +91,7 @@ void submap::set_graffiti( const point &p, const std::string &new_graffiti )
     }
 }
 
-void submap::delete_graffiti( const point &p )
+void submap::delete_graffiti( const point_sm_ms_ib&p )
 {
     const cosmetic_find_result fresult = find_cosmetic( cosmetics, p, COSMETICS_GRAFFITI );
     if( fresult.result ) {
@@ -100,17 +100,17 @@ void submap::delete_graffiti( const point &p )
         cosmetics.pop_back();
     }
 }
-bool submap::has_signage( const point &p ) const
+bool submap::has_signage( const point_sm_ms_ib&p ) const
 {
-    if( !is_uniform() && m->frn[p.x][p.y].obj().has_flag( ter_furn_flag::TFLAG_SIGN ) ) {
+    if( !is_uniform() && m->frn[p]->has_flag( ter_furn_flag::TFLAG_SIGN ) ) {
         return find_cosmetic( cosmetics, p, COSMETICS_SIGNAGE ).result;
     }
 
     return false;
 }
-std::string submap::get_signage( const point &p ) const
+std::string submap::get_signage( const point_sm_ms_ib&p ) const
 {
-    if( !is_uniform() && m->frn[p.x][p.y].obj().has_flag( ter_furn_flag::TFLAG_SIGN ) ) {
+    if( !is_uniform() && m->frn[p]->has_flag( ter_furn_flag::TFLAG_SIGN ) ) {
         const cosmetic_find_result fresult = find_cosmetic( cosmetics, p, COSMETICS_SIGNAGE );
         if( fresult.result ) {
             return cosmetics[ fresult.ndx ].str;
@@ -119,7 +119,7 @@ std::string submap::get_signage( const point &p ) const
 
     return STRING_EMPTY;
 }
-void submap::set_signage( const point &p, const std::string &s )
+void submap::set_signage( const point_sm_ms_ib&p, const std::string &s )
 {
     ensure_nonuniform();
     // Find signage at p if available
@@ -130,7 +130,7 @@ void submap::set_signage( const point &p, const std::string &s )
         insert_cosmetic( p, COSMETICS_SIGNAGE, s );
     }
 }
-void submap::delete_signage( const point &p )
+void submap::delete_signage( const point_sm_ms_ib&p )
 {
     const cosmetic_find_result fresult = find_cosmetic( cosmetics, p, COSMETICS_SIGNAGE );
     if( fresult.result ) {
@@ -146,7 +146,7 @@ void submap::update_legacy_computer()
         for( int x = 0; x < SEEX; ++x ) {
             for( int y = 0; y < SEEY; ++y ) {
                 if( m->frn[x][y] == furn_f_console ) {
-                    computers.emplace( point( x, y ), *legacy_computer );
+                    computers.emplace(point_sm_ms_ib::make_unchecked( x, y ), *legacy_computer );
                 }
             }
         }
@@ -154,13 +154,13 @@ void submap::update_legacy_computer()
     }
 }
 
-bool submap::has_computer( const point &p ) const
+bool submap::has_computer( const point_sm_ms_ib&p ) const
 {
     return !is_uniform() && ( computers.find( p ) != computers.end() ||
-                              ( legacy_computer && m->frn[p.x][p.y] == furn_f_console ) );
+                              ( legacy_computer && m->frn[p] == furn_f_console ) );
 }
 
-const computer *submap::get_computer( const point &p ) const
+const computer *submap::get_computer( const point_sm_ms_ib&p ) const
 {
     // the returned object will not get modified (should not, at least), so we
     // don't yet need to update to std::map
@@ -168,13 +168,13 @@ const computer *submap::get_computer( const point &p ) const
     if( it != computers.end() ) {
         return &it->second;
     }
-    if( !is_uniform() && legacy_computer && m->frn[p.x][p.y] == furn_f_console ) {
+    if( !is_uniform() && legacy_computer && m->frn[p] == furn_f_console ) {
         return legacy_computer.get();
     }
     return nullptr;
 }
 
-computer *submap::get_computer( const point &p )
+computer *submap::get_computer( const point_sm_ms_ib&p )
 {
     // need to update to std::map first so modifications to the returned object
     // only affects the exact point p
@@ -186,7 +186,7 @@ computer *submap::get_computer( const point &p )
     return nullptr;
 }
 
-void submap::set_computer( const point &p, const computer &c )
+void submap::set_computer( const point_sm_ms_ib&p, const computer &c )
 {
     //update_legacy_computer();
     const auto it = computers.find( p );
@@ -197,7 +197,7 @@ void submap::set_computer( const point &p, const computer &c )
     }
 }
 
-void submap::delete_computer( const point &p )
+void submap::delete_computer( const point_sm_ms_ib&p )
 {
     update_legacy_computer();
     computers.erase( p );
@@ -213,7 +213,7 @@ bool submap::contains_vehicle( vehicle *veh )
     return match != vehicles.end();
 }
 
-bool submap::is_open_air( const point &p ) const
+bool submap::is_open_air( const point_sm_ms_ib&p ) const
 {
     ter_id t = get_ter( p );
     return t->trap == tr_ledge;
@@ -230,32 +230,34 @@ void submap::rotate( int turns )
         return;
     }
 
-    const auto rotate_point = [turns]( const point & p ) {
-        return p.rotate( turns, { SEEX, SEEY } );
+    const auto rotate_point = [turns]( const point_sm_ms_ib& p ) {
+        return point_sm_ms_ib::make_unchecked(p.raw().rotate(turns, { SEEX, SEEY }));
     };
-    const auto rotate_point_ccw = [turns]( const point & p ) {
-        return p.rotate( 4 - turns, { SEEX, SEEY } );
+    const auto rotate_point_ccw = [turns]( const point_sm_ms_ib& p ) {
+        return point_sm_ms_ib::make_unchecked(p.raw().rotate(4 - turns, { SEEX, SEEY }));
     };
 
     if( turns == 2 ) {
         // Swap horizontal stripes.
         for( int j = 0, je = SEEY / 2; j < je; ++j ) {
             for( int i = j, ie = SEEX - j; i < ie; ++i ) {
-                m->swap_soa_tile( { i, j }, rotate_point( { i, j } ) );
+                const point_sm_ms_ib p = point_sm_ms_ib::make_unchecked(i, j);
+                m->swap_soa_tile(p, rotate_point( p ) );
             }
         }
         // Swap vertical stripes so that they don't overlap with
         // the already swapped horizontals.
         for( int i = 0, ie = SEEX / 2; i < ie; ++i ) {
             for( int j = i + 1, je = SEEY - i - 1; j < je; ++j ) {
-                m->swap_soa_tile( { i, j }, rotate_point( { i, j } ) );
+                const point_sm_ms_ib p = point_sm_ms_ib::make_unchecked(i, j);
+                m->swap_soa_tile(p, rotate_point( p ) );
             }
         }
     } else {
         for( int j = 0, je = SEEY / 2; j < je; ++j ) {
             for( int i = j, ie = SEEX - j - 1; i < ie; ++i ) {
-                point p = point{ i, j };
-                point pp = p;
+                point_sm_ms_ib p = point_sm_ms_ib::make_unchecked( i, j );
+                point_sm_ms_ib pp = p;
                 // three swaps are enough to perform the circular shift of four elements:
                 // 0123 -> 3120 -> 3102 -> 3012
                 for( int k = 0; k < 3; ++k ) {
@@ -277,8 +279,11 @@ void submap::rotate( int turns )
         elem.pos = rotate_point( elem.pos );
     }
 
+    const auto rotate_point_ob = [turns](const point_sm_ms& p) {
+        return point_sm_ms::make_unchecked(p.raw().rotate(turns, { SEEX, SEEY }));
+        };
     for( auto &elem : vehicles ) {
-        const point new_pos = rotate_point( elem->pos );
+        const point_sm_ms new_pos = rotate_point_ob( elem->pos );
 
         elem->pos = new_pos;
         // turn the steering wheel, vehicle::turn does not actually
@@ -289,7 +294,7 @@ void submap::rotate( int turns )
         elem->precalc_mounts( 0, elem->turn_dir, elem->pivot_anchor[0] );
     }
 
-    std::map<point, computer> rot_comp;
+    std::map<point_sm_ms_ib, computer> rot_comp;
     for( auto &elem : computers ) {
         rot_comp.emplace( rotate_point( elem.first ), elem.second );
     }
@@ -301,40 +306,41 @@ void submap::mirror( bool horizontally )
     if( is_uniform() ) {
         return;
     }
-    std::map<point, computer> mirror_comp;
+    std::map<point_sm_ms_ib, computer> mirror_comp;
 
     if( horizontally ) {
         for( int i = 0, ie = SEEX / 2; i < ie; i++ ) {
             for( int k = 0; k < SEEY; k++ ) {
-                m->swap_soa_tile( { i, k }, { SEEX - 1 - i, k } );
+                m->swap_soa_tile(point_sm_ms_ib::make_unchecked( i, k ), 
+                    point_sm_ms_ib::make_unchecked(SEEX - 1 - i, k ) );
             }
         }
 
         for( submap::cosmetic_t &elem : cosmetics ) {
-            elem.pos = point( -elem.pos.x, elem.pos.y ) + point( SEEX - 1, 0 );
+            elem.pos = point_sm_ms_ib::make_unchecked(-elem.pos.x() + SEEX - 1, elem.pos.y());
         }
 
         active_items.mirror( { SEEX, SEEY }, true );
 
         for( auto &elem : computers ) {
-            mirror_comp.emplace( point( -elem.first.x, elem.first.y ) + point( SEEX - 1, 0 ), elem.second );
+            mirror_comp.emplace(point_sm_ms_ib::make_unchecked(-elem.first.x() + SEEX - 1, elem.first.y()), elem.second );
         }
         computers = mirror_comp;
     } else {
         for( int k = 0, ke = SEEY / 2; k < ke; k++ ) {
             for( int i = 0; i < SEEX; i++ ) {
-                m->swap_soa_tile( { i, k }, { i, SEEY - 1 - k } );
+                m->swap_soa_tile(point_sm_ms_ib::make_unchecked( i, k ), point_sm_ms_ib::make_unchecked( i, SEEY - 1 - k ) );
             }
         }
 
         for( submap::cosmetic_t &elem : cosmetics ) {
-            elem.pos = point( elem.pos.x, -elem.pos.y ) + point( 0, SEEY - 1 );
+            elem.pos = point_sm_ms_ib::make_unchecked(elem.pos.x(), -elem.pos.y() + SEEY - 1);
         }
 
         active_items.mirror( { SEEX, SEEY }, false );
 
         for( auto &elem : computers ) {
-            mirror_comp.emplace( point( elem.first.x, -elem.first.y ) + point( 0, SEEY - 1 ), elem.second );
+            mirror_comp.emplace(point_sm_ms_ib::make_unchecked(elem.first.x(), -elem.first.y() + SEEY - 1), elem.second );
         }
         computers = mirror_comp;
     }
@@ -345,14 +351,14 @@ void submap::revert_submap( submap &sr )
     reverted = true;
     if( sr.is_uniform() ) {
         m.reset();
-        set_all_ter( sr.get_ter( point_zero ), true );
+        set_all_ter( sr.get_ter(point_sm_ms_ib()), true );
         return;
     }
 
     ensure_nonuniform();
     for( int x = 0; x < SEEX; x++ ) {
         for( int y = 0; y < SEEY; y++ ) {
-            point pt( x, y );
+            point_sm_ms_ib pt = point_sm_ms_ib::make_unchecked( x, y );
             m->frn[x][y] = sr.get_furn( pt );
             m->ter[x][y] = sr.get_ter( pt );
             m->trp[x][y] = sr.get_trap( pt );
@@ -361,7 +367,7 @@ void submap::revert_submap( submap &sr )
                 if( itm.is_emissive() ) {
                     this->update_lum_add( pt, itm );
                 }
-                active_items.add( itm, pt );
+                active_items.add( itm, pt.raw() );
             }
         }
     }
@@ -378,26 +384,28 @@ submap submap::get_revert_submap() const
     return ret;
 }
 
-void submap::update_lum_rem( const point &p, const item &i )
+void submap::update_lum_rem( const point_sm_ms_ib&p, const item &i )
 {
     ensure_nonuniform();
     if( !i.is_emissive() ) {
         return;
-    } else if( m->lum[p.x][p.y] && m->lum[p.x][p.y] < 255 ) {
-        m->lum[p.x][p.y]--;
+    } else if( m->lum[p] && m->lum[p] < 255 ) {
+        m->lum[p]--;
         return;
     }
 
     // Have to scan through all items to be sure removing i will actually lower
     // the count below 255.
     int count = 0;
-    for( const item &it : m->itm[p.x][p.y] ) {
+    for( const item &it : m->itm[p] ) {
         if( it.is_emissive() ) {
             count++;
         }
     }
 
     if( count <= 256 ) {
-        m->lum[p.x][p.y] = static_cast<uint8_t>( count - 1 );
+        m->lum[p] = static_cast<uint8_t>( count - 1 );
     }
 }
+
+submap null_submap;

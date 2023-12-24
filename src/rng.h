@@ -200,4 +200,29 @@ std::optional<tripoint> random_point( const tripoint_range<tripoint> &range,
 std::optional<tripoint> random_point( const map &m,
                                       const std::function<bool( const tripoint & )> &predicate );
 
+template <typename Tripoint, typename PredicateFn>
+inline std::optional<Tripoint> random_point(const tripoint_range<Tripoint>& range, PredicateFn&& predicate_fn)
+{
+    // Optimist approach: just assume there are plenty of suitable places and a randomly
+    // chosen point will have a good chance to hit one of them.
+    // If there are only few suitable places, we have to find them all, otherwise this loop may never finish.
+    for (int tries = 0; tries < 10; ++tries) {
+        const tripoint p(rng(range.min().x, range.max().x), rng(range.min().y, range.max().y),
+            rng(range.min().z, range.max().z));
+        if (predicate_fn(tripoint_range_traits::make_unchecked(p))) {
+            return p;
+        }
+    }
+    std::vector<Tripoint> suitable;
+    for (const Tripoint& p : range) {
+        if (predicate_fn(p)) {
+            suitable.push_back(p);
+        }
+    }
+    if (suitable.empty()) {
+        return {};
+    }
+    return random_entry(suitable);
+}
+
 #endif // CATA_SRC_RNG_H

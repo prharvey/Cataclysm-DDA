@@ -597,9 +597,9 @@ class zone_manager
         void swap( zone_data &a, zone_data &b );
         void rotate_zones( map &target_map, int turns );
         // list of tripoints of zones that are loot zones only
-        std::unordered_set<tripoint> get_point_set_loot(
+        std::unordered_set<tripoint_abs_ms> get_point_set_loot(
             const tripoint_abs_ms &where, int radius, const faction_id &fac = your_fac ) const;
-        std::unordered_set<tripoint> get_point_set_loot(
+        std::unordered_set<tripoint_abs_ms> get_point_set_loot(
             const tripoint_abs_ms &where, int radius, bool npc_search,
             const faction_id &fac = your_fac ) const;
 

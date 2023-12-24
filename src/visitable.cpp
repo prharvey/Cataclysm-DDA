@@ -127,7 +127,7 @@ static int has_quality_from_vpart( const vehicle &veh, int part, const quality_i
 {
     int qty = 0;
 
-    point pos = veh.part( part ).mount;
+    const point_rel_ms pos = veh.part( part ).mount;
     for( const int n : veh.parts_at_relative( pos, true ) ) {
         const vehicle_part &vp = veh.part( n );
         // only unbroken parts can provide tool qualities
@@ -241,7 +241,7 @@ static int max_quality_from_vpart( const vehicle &veh, int part, const quality_i
 {
     int res = INT_MIN;
 
-    point pos = veh.part( part ).mount;
+    const point_rel_ms pos = veh.part( part ).mount;
     for( const int &n : veh.parts_at_relative( pos, true ) ) {
         const vehicle_part &vp = veh.part( n );
 
@@ -472,28 +472,28 @@ VisitResponse map_cursor::visit_items(
     const std::function<VisitResponse( item *, item * )> &func ) const
 {
     map &here = get_map();
-    tripoint p = pos();
-
-    // check furniture pseudo items
-    if( here.furn( p ) != f_null ) {
-        itype_id it_id = here.furn( p )->crafting_pseudo_item;
-        if( it_id.is_valid() ) {
-            item it( it_id );
-            if( visit_internal( func, &it ) == VisitResponse::ABORT ) {
-                return VisitResponse::ABORT;
+    if (const std::optional<tripoint_bub_ms_ib> p = here.make_inbounds(here.bub_from_abs(pos_abs()))) {
+        // check furniture pseudo items
+        if (here.furn(*p) != f_null) {
+            itype_id it_id = here.furn(*p)->crafting_pseudo_item;
+            if (it_id.is_valid()) {
+                item it(it_id);
+                if (visit_internal(func, &it) == VisitResponse::ABORT) {
+                    return VisitResponse::ABORT;
+                }
             }
         }
-    }
 
-    // skip inaccessible items
-    if( here.has_flag( ter_furn_flag::TFLAG_SEALED, p ) &&
-        !here.has_flag( ter_furn_flag::TFLAG_LIQUIDCONT, p ) ) {
-        return VisitResponse::NEXT;
-    }
+        // skip inaccessible items
+        if (here.has_flag(ter_furn_flag::TFLAG_SEALED, *p) &&
+            !here.has_flag(ter_furn_flag::TFLAG_LIQUIDCONT, *p)) {
+            return VisitResponse::NEXT;
+        }
 
-    for( item &e : here.i_at( p ) ) {
-        if( visit_internal( func, &e ) == VisitResponse::ABORT ) {
-            return VisitResponse::ABORT;
+        for (item& e : here.i_at(*p)) {
+            if (visit_internal(func, &e) == VisitResponse::ABORT) {
+                return VisitResponse::ABORT;
+            }
         }
     }
     return VisitResponse::NEXT;
@@ -691,34 +691,32 @@ std::list<item> map_cursor::remove_items_with( const
     }
 
     map &here = get_map();
-    if( !here.inbounds( pos() ) ) {
-        debugmsg( "cannot remove items from map: cursor out-of-bounds" );
-        return res;
-    }
 
     // fetch the appropriate item stack
-    point offset;
-    submap *sub = here.get_submap_at( pos(), offset );
-    cata::colony<item> &stack = sub->get_items( offset );
+    if (const std::optional<tripoint_bub_ms_ib> p = here.make_inbounds(here.bub_from_abs(pos_abs()))) {
+        point_sm_ms_ib offset;
+        submap* sub = here.get_submap_at(*p, offset);
+        cata::colony<item>& stack = sub->get_items(offset);
 
-    for( auto iter = stack.begin(); iter != stack.end(); ) {
-        if( filter( *iter ) ) {
-            // if necessary remove item from the luminosity map
-            sub->update_lum_rem( offset, *iter );
+        for (auto iter = stack.begin(); iter != stack.end(); ) {
+            if (filter(*iter)) {
+                // if necessary remove item from the luminosity map
+                sub->update_lum_rem(offset, *iter);
 
-            // finally remove the item
-            res.push_back( *iter );
-            iter = stack.erase( iter );
+                // finally remove the item
+                res.push_back(*iter);
+                iter = stack.erase(iter);
 
-            if( --count == 0 ) {
-                break;
+                if (--count == 0) {
+                    break;
+                }
+            } else {
+                iter->remove_internal(filter, count, res);
+                if (count == 0) {
+                    break;
+                }
+                ++iter;
             }
-        } else {
-            iter->remove_internal( filter, count, res );
-            if( count == 0 ) {
-                break;
-            }
-            ++iter;
         }
     }
     return res;

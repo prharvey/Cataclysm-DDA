@@ -37,7 +37,7 @@ struct furn_t;
 struct ter_t;
 
 struct spawn_point {
-    point pos;
+    point_sm_ms_ib pos;
     int count;
     mtype_id type;
     int faction_id;
@@ -45,7 +45,7 @@ struct spawn_point {
     bool friendly;
     std::string name;
     spawn_data data;
-    explicit spawn_point( const mtype_id &T = mtype_id::NULL_ID(), int C = 0, point P = point_zero,
+    explicit spawn_point( const mtype_id &T = mtype_id::NULL_ID(), int C = 0, point_sm_ms_ib P = point_sm_ms_ib(),
                           int FAC = -1, int MIS = -1, bool F = false,
                           const std::string &N = "NONE", const spawn_data &SD = spawn_data() ) :
         pos( P ), count( C ), type( T ), faction_id( FAC ),
@@ -55,15 +55,15 @@ struct spawn_point {
 // Suppression due to bug in clang-tidy 12
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 struct maptile_soa {
-    cata::mdarray<ter_id, point_sm_ms>             ter; // Terrain on each square
-    cata::mdarray<furn_id, point_sm_ms>            frn; // Furniture on each square
-    cata::mdarray<std::uint8_t, point_sm_ms>       lum; // Num items emitting light on each square
-    cata::mdarray<cata::colony<item>, point_sm_ms> itm; // Items on each square
-    cata::mdarray<field, point_sm_ms>              fld; // Field on each square
-    cata::mdarray<trap_id, point_sm_ms>            trp; // Trap on each square
-    cata::mdarray<int, point_sm_ms>                rad; // Irradiation of each square
+    cata::mdarray<ter_id, point_sm_ms_ib>             ter; // Terrain on each square
+    cata::mdarray<furn_id, point_sm_ms_ib>            frn; // Furniture on each square
+    cata::mdarray<std::uint8_t, point_sm_ms_ib>       lum; // Num items emitting light on each square
+    cata::mdarray<cata::colony<item>, point_sm_ms_ib> itm; // Items on each square
+    cata::mdarray<field, point_sm_ms_ib>              fld; // Field on each square
+    cata::mdarray<trap_id, point_sm_ms_ib>            trp; // Trap on each square
+    cata::mdarray<int, point_sm_ms_ib>                rad; // Irradiation of each square
 
-    void swap_soa_tile( const point &p1, const point &p2 );
+    void swap_soa_tile( const point_sm_ms_ib&p1, const point_sm_ms_ib&p2 );
 };
 
 class submap
@@ -90,16 +90,16 @@ class submap
 
         submap get_revert_submap() const;
 
-        trap_id get_trap( const point &p ) const {
+        trap_id get_trap( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 return tr_null;
             }
-            return m->trp[p.x][p.y];
+            return m->trp[p];
         }
 
-        void set_trap( const point &p, trap_id trap ) {
+        void set_trap( const point_sm_ms_ib&p, trap_id trap ) {
             ensure_nonuniform();
-            m->trp[p.x][p.y] = trap;
+            m->trp[p] = trap;
         }
 
         void set_all_traps( const trap_id &trap ) {
@@ -107,23 +107,23 @@ class submap
             std::uninitialized_fill_n( &m->trp[0][0], elements, trap );
         }
 
-        furn_id get_furn( const point &p ) const {
+        furn_id get_furn( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 return f_null;
             }
-            return m->frn[p.x][p.y];
+            return m->frn[p];
         }
 
-        void set_furn( const point &p, furn_id furn ) {
+        void set_furn( const point_sm_ms_ib&p, furn_id furn ) {
             ensure_nonuniform();
-            m->frn[p.x][p.y] = furn;
+            m->frn[p] = furn;
         }
 
         void set_all_furn( const furn_id &furn ) {
             ensure_nonuniform();
             std::uninitialized_fill_n( &m->frn[0][0], elements, furn );
         }
-        int get_map_damage( const point_sm_ms &p ) const {
+        int get_map_damage( const point_sm_ms_ib&p ) const {
             auto it = ephemeral_data.find( p );
             if( it != ephemeral_data.end() ) {
                 return it->second.damage;
@@ -131,20 +131,20 @@ class submap
             return 0;
         }
 
-        void set_map_damage( const point_sm_ms &p, int dmg ) {
+        void set_map_damage( const point_sm_ms_ib&p, int dmg ) {
             ephemeral_data[p] = { dmg };
         }
 
-        ter_id get_ter( const point &p ) const {
+        ter_id get_ter( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 return uniform_ter;
             }
-            return m->ter[p.x][p.y];
+            return m->ter[p];
         }
 
-        void set_ter( const point &p, ter_id terr ) {
+        void set_ter( const point_sm_ms_ib&p, ter_id terr ) {
             ensure_nonuniform();
-            m->ter[p.x][p.y] = terr;
+            m->ter[p] = terr;
         }
 
         void set_all_ter( const ter_id &terr, bool uniform_ok = false ) {
@@ -158,82 +158,82 @@ class submap
             }
         }
 
-        int get_radiation( const point &p ) const {
+        int get_radiation( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 return 0;
             }
-            return m->rad[p.x][p.y];
+            return m->rad[p];
         }
 
-        void set_radiation( const point &p, const int radiation ) {
+        void set_radiation( const point_sm_ms_ib&p, const int radiation ) {
             ensure_nonuniform();
-            m->rad[p.x][p.y] = radiation;
+            m->rad[p] = radiation;
         }
 
-        uint8_t get_lum( const point &p ) const {
+        uint8_t get_lum( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 return 0;
             }
-            return m->lum[p.x][p.y];
+            return m->lum[p];
         }
 
-        void set_lum( const point &p, uint8_t luminance ) {
+        void set_lum( const point_sm_ms_ib&p, uint8_t luminance ) {
             ensure_nonuniform();
-            m->lum[p.x][p.y] = luminance;
+            m->lum[p] = luminance;
         }
 
-        void update_lum_add( const point &p, const item &i ) {
+        void update_lum_add( const point_sm_ms_ib&p, const item &i ) {
             ensure_nonuniform();
-            if( i.is_emissive() && m->lum[p.x][p.y] < 255 ) {
-                m->lum[p.x][p.y]++;
+            if( i.is_emissive() && m->lum[p] < 255 ) {
+                m->lum[p]++;
             }
         }
 
-        void update_lum_rem( const point &p, const item &i );
+        void update_lum_rem( const point_sm_ms_ib&p, const item &i );
 
         // TODO: Replace this as it essentially makes itm public
-        cata::colony<item> &get_items( const point &p ) {
+        cata::colony<item> &get_items( const point_sm_ms_ib&p ) {
             if( is_uniform() ) {
                 cata::colony<item> static noitems;
                 return noitems;
             }
-            return m->itm[p.x][p.y];
+            return m->itm[p];
         }
 
-        const cata::colony<item> &get_items( const point &p ) const {
+        const cata::colony<item> &get_items( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 cata::colony<item> static noitems;
                 return noitems;
             }
-            return m->itm[p.x][p.y];
+            return m->itm[p];
         }
 
         // TODO: Replace this as it essentially makes fld public
-        field &get_field( const point &p ) {
+        field &get_field( const point_sm_ms_ib&p ) {
             if( is_uniform() ) {
                 field static nofield;
                 return nofield;
             }
-            return m->fld[p.x][p.y];
+            return m->fld[p];
         }
 
-        const field &get_field( const point &p ) const {
+        const field &get_field( const point_sm_ms_ib&p ) const {
             if( is_uniform() ) {
                 field static nofield;
                 return nofield;
             }
-            return m->fld[p.x][p.y];
+            return m->fld[p];
         }
 
-        void clear_fields( const point &p );
+        void clear_fields( const point_sm_ms_ib&p );
 
         struct cosmetic_t {
-            point pos;
+            point_sm_ms_ib pos;
             std::string type;
             std::string str;
         };
 
-        void insert_cosmetic( const point &p, const std::string &type, const std::string &str ) {
+        void insert_cosmetic( const point_sm_ms_ib&p, const std::string &type, const std::string &str ) {
             cosmetic_t ins;
 
             ins.pos = p;
@@ -251,31 +251,31 @@ class submap
             temperature_mod = units::to_fahrenheit_delta( new_temperature_mod );
         }
 
-        bool has_graffiti( const point &p ) const;
-        const std::string &get_graffiti( const point &p ) const;
-        void set_graffiti( const point &p, const std::string &new_graffiti );
-        void delete_graffiti( const point &p );
+        bool has_graffiti( const point_sm_ms_ib& point_sm_ms_ib) const;
+        const std::string &get_graffiti( const point_sm_ms_ib&p ) const;
+        void set_graffiti( const point_sm_ms_ib&p, const std::string &new_graffiti );
+        void delete_graffiti( const point_sm_ms_ib&p );
 
         // Signage is a pretend union between furniture on a square and stored
         // writing on the square. When both are present, we have signage.
         // Its effect is meant to be cosmetic and atmospheric only.
-        bool has_signage( const point &p ) const;
+        bool has_signage( const point_sm_ms_ib&p ) const;
         // Dependent on furniture + cosmetics.
-        std::string get_signage( const point &p ) const;
+        std::string get_signage( const point_sm_ms_ib&p ) const;
         // Can be used anytime (prevents code from needing to place sign first.)
-        void set_signage( const point &p, const std::string &s );
+        void set_signage( const point_sm_ms_ib&p, const std::string &s );
         // Can be used anytime (prevents code from needing to place sign first.)
-        void delete_signage( const point &p );
+        void delete_signage( const point_sm_ms_ib&p );
 
-        bool has_computer( const point &p ) const;
-        const computer *get_computer( const point &p ) const;
-        computer *get_computer( const point &p );
-        void set_computer( const point &p, const computer &c );
-        void delete_computer( const point &p );
+        bool has_computer( const point_sm_ms_ib&p ) const;
+        const computer *get_computer( const point_sm_ms_ib&p ) const;
+        computer *get_computer( const point_sm_ms_ib&p );
+        void set_computer( const point_sm_ms_ib&p, const computer &c );
+        void delete_computer( const point_sm_ms_ib&p );
 
         bool contains_vehicle( vehicle * );
 
-        bool is_open_air( const point & ) const;
+        bool is_open_air( const point_sm_ms_ib& ) const;
 
         void rotate( int turns );
         void mirror( bool horizontally );
@@ -303,7 +303,7 @@ class submap
          * deleted.
          */
         std::vector<std::unique_ptr<vehicle>> vehicles;
-        std::map<tripoint_sm_ms, partial_con> partial_constructions;
+        std::map<tripoint_sm_ms_ib, partial_con> partial_constructions;
         std::unique_ptr<basecamp> camp;  // only allowing one basecamp per submap
 
         struct tile_data {
@@ -311,8 +311,8 @@ class submap
         };
 
     private:
-        std::map<point_sm_ms, tile_data> ephemeral_data;
-        std::map<point, computer> computers;
+        std::map<point_sm_ms_ib, tile_data> ephemeral_data;
+        std::map<point_sm_ms_ib, computer> computers;
         std::unique_ptr<computer> legacy_computer;
         std::unique_ptr<maptile_soa> m;
         ter_id uniform_ter = t_null;
@@ -322,6 +322,8 @@ class submap
 
         static constexpr size_t elements = SEEX * SEEY;
 };
+
+extern submap null_submap;
 
 /**
  * A wrapper for a submap point. Allows getting multiple map features
@@ -340,10 +342,10 @@ class maptile_impl
         friend map; // To allow "sliding" the tile in x/y without bounds checks
         friend submap;
         Submap *sm;
-        point pos_;
+        point_sm_ms_ib pos_;
 
-        maptile_impl( Submap *sub, const point &p ) :
-            sm( sub ), pos_( p ) { }
+        maptile_impl( Submap* sub, const point_sm_ms_ib& p ) :
+            sm(sub), pos_(p) { }
         template<typename OtherSubmap>
         // NOLINTNEXTLINE(google-explicit-constructor)
         maptile_impl( const maptile_impl<OtherSubmap> &other ) :
@@ -352,7 +354,7 @@ class maptile_impl
         Submap *wrapped_submap() const {
             return sm;
         }
-        inline point pos() const {
+        inline point_sm_ms_ib pos() const {
             return pos_;
         }
 

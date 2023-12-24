@@ -15,7 +15,7 @@ class item_pocket;
 
 // A struct used to uniquely identify an item within a submap or vehicle.
 struct item_reference {
-    point location;
+    point_sm_ms_ib location;
     safe_reference<item> item_ref;
     // parent invalidating would also invalidate item_ref so it's safe to use a raw pointers here
     item *parent = nullptr;

@@ -36,7 +36,7 @@ std::vector<Point> get_sorted_tiles_by_distance( const Point &center, const Cont
     return sorted;
 }
 
-std::vector<tripoint_bub_ms> route_adjacent( const Character &you, const tripoint_bub_ms &dest );
+std::vector<tripoint_bub_ms_ib> route_adjacent( const Character &you, const tripoint_bub_ms_ib&dest );
 
 enum class requirement_check_result : int {
     SKIP_LOCATION = 0,

@@ -343,7 +343,7 @@ void vehicle_part::ammo_unset()
     }
 }
 
-int vehicle_part::ammo_consume( int qty, const tripoint &pos )
+int vehicle_part::ammo_consume( int qty, const tripoint_bub_ms &pos )
 {
     if( is_tank() && !base.empty() ) {
         const int res = std::min( ammo_remaining(), qty );
@@ -354,7 +354,7 @@ int vehicle_part::ammo_consume( int qty, const tripoint &pos )
         }
         return res;
     }
-    return base.ammo_consume( qty, pos, nullptr );
+    return base.ammo_consume( qty, pos.raw(), nullptr);
 }
 
 units::energy vehicle_part::consume_energy( const itype_id &ftype, units::energy wanted_energy )
@@ -439,7 +439,7 @@ bool vehicle_part::can_reload( const item &obj ) const
     return ammo_capacity( obj.ammo_type() ) > 0;
 }
 
-void vehicle_part::process_contents( map &here, const tripoint &pos, const bool e_heater )
+void vehicle_part::process_contents( map &here, const tripoint_bub_ms&pos, const bool e_heater )
 {
     // for now we only care about processing food containers since things like
     // fuel don't care about temperature yet
@@ -454,7 +454,7 @@ void vehicle_part::process_contents( map &here, const tripoint &pos, const bool 
     } else if( enabled && info().has_flag( VPFLAG_HEATED_TANK ) ) {
         flag = temperature_flag::HEATER;
     }
-    base.process( here, nullptr, pos, 1, flag );
+    base.process( here, nullptr, pos.raw(), 1, flag);
 }
 
 bool vehicle_part::fill_with( item &liquid, int qty )
@@ -535,7 +535,7 @@ void vehicle_part::unset_crew()
     crew_id = character_id();
 }
 
-void vehicle_part::reset_target( const tripoint &pos )
+void vehicle_part::reset_target( const tripoint_abs_ms &pos )
 {
     target.first = pos;
     target.second = pos;

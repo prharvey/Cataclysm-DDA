@@ -1444,7 +1444,7 @@ class item : public visitable
             /// A safe reference to the link's target vehicle. Will recreate itself whenever the vehicle enters the bubble.
             safe_reference<vehicle> t_veh_safe; // NOLINT(cata-serialize)
             /// The linked part's mount offset on the target vehicle.
-            point t_mount = point_zero;
+            point_rel_ms t_mount;
             /// The current slack of the cable.
             int length = 0;
             /// The maximum length of the cable. Set during initialization.

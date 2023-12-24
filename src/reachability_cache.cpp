@@ -9,33 +9,33 @@
 #include "reachability_cache.h"
 
 //helper functions
-static constexpr half_open_rectangle<point> bounding_rect( point_zero, {MAPSIZE_X, MAPSIZE_Y} );
+static constexpr half_open_rectangle<point_bub_ms> bounding_rect(point_bub_ms(), point_bub_ms(MAPSIZE_X, MAPSIZE_Y));
 
 // needs to be explicitly defined to avoid linker errors
 // see https://stackoverflow.com/questions/8452952/c-linker-error-with-class-static-constexpr
 static constexpr int MAX_D = reachability_cache_layer::MAX_D;
 
-bool reachability_cache_layer::update( const point &p, reachability_cache_layer::ElType value )
+bool reachability_cache_layer::update( const point_bub_ms_ib&p, reachability_cache_layer::ElType value )
 {
     bool change = ( *this )[ p ] != value;
     ( *this )[ p ] = value;
     return change;
 }
 
-inline reachability_cache_layer::ElType &reachability_cache_layer::operator[]( const point &p )
+inline reachability_cache_layer::ElType &reachability_cache_layer::operator[]( const point_bub_ms_ib&p )
 {
-    return cache[p.x][p.y];
+    return cache[p];
 }
 inline const reachability_cache_layer::ElType &reachability_cache_layer::operator[](
-    const point &p ) const
+    const point_bub_ms_ib&p ) const
 {
-    return cache[p.x][p.y];
+    return cache[p];
 }
 
 inline reachability_cache_layer::ElType
-reachability_cache_layer::get_or( const point &p, reachability_cache_layer::ElType def ) const
+reachability_cache_layer::get_or( const point_bub_ms&p, reachability_cache_layer::ElType def ) const
 {
-    return bounding_rect.contains( p ) ? ( *this )[ p ] : def;
+    return bounding_rect.contains( p ) ? ( *this )[ point_bub_ms_ib::make_unchecked(p) ] : def;
 }
 
 template<bool Horizontal, typename... Types>
@@ -46,7 +46,7 @@ void reachability_cache<Horizontal, Types...>::invalidate()
 }
 
 template<bool Horizontal, typename... Types>
-void reachability_cache<Horizontal, Types...>::invalidate( const point &p )
+void reachability_cache<Horizontal, Types...>::invalidate( const point_bub_ms_ib&p )
 {
     dirty_any = true;
     dirty[dirty_idx( p )] = true;
@@ -137,7 +137,7 @@ void reachability_cache<Horizontal, Types...>::rebuild( const Types &... params 
 }
 
 template<bool Horizontal, typename... Types>
-int reachability_cache<Horizontal, Types...>::get_value( Q quad, const point &p ) const
+int reachability_cache<Horizontal, Types...>::get_value( Q quad, const point_bub_ms_ib&p ) const
 {
     return ( *this )[ quad ][ p ];
 }
@@ -158,7 +158,7 @@ reachability_cache<Horizontal, Params...>::operator[]( const reachability_cache:
 
 template<bool Horizontal, typename... Types>
 bool reachability_cache<Horizontal, Types...>::has_potential_los(
-    const point &from, const point &to, const Types &... params )
+    const point_bub_ms_ib&from, const point_bub_ms_ib&to, const Types &... params )
 {
     if( dirty_any ) {
         if( Spec::source_cache_dirty( params ... ) ) {
@@ -187,9 +187,9 @@ inline int reachability_cache<Horizontal, Params...>::dirty_idx( const point &p 
     return ( p.x / SEEX ) * MAPSIZE + p.y / SEEY;
 }
 
-static bool transp( const level_cache &lc, const point &p )
+static bool transp( const level_cache &lc, const point_bub_ms_ib &p )
 {
-    return lc.transparent_cache_wo_fields[p.x][p.y];
+    return lc.transparent_cache_wo_fields[p.x()][p.y()];
 }
 
 static int max3( int arg,  int arg2, int arg3 )
@@ -206,13 +206,13 @@ static int min4( int arg,  int arg2, int arg3, int arg4 )
 // el = 0;  if not transparent, or else:
 // el = max( horizontal_neighbor + 1, vertical_neighbor + 1, diagonal_neighbor + 2)
 bool reachability_cache_specialization<true, level_cache>::dynamic_fun(
-    reachability_cache_layer &layer, const point &p, const point &dir, const level_cache &this_lc )
+    reachability_cache_layer &layer, const point_bub_ms_ib&p, const point_rel_ms&dir, const level_cache &this_lc )
 {
     using Layer = reachability_cache_layer;
 
     // if point is transparent, returns given prev_value, otherwise returns zero
-    const auto transp_or_zero = [&]( const point & p, int prev_value ) {
-        return prev_value != 0 && !transp( this_lc, p ) ? 0 : prev_value;
+    const auto transp_or_zero = [&]( const point_bub_ms& p, int prev_value ) {
+        return prev_value != 0 && !transp( this_lc, point_bub_ms_ib::make_unchecked(p) ) ? 0 : prev_value;
     };
 
     const Layer::ElType v =
@@ -220,8 +220,8 @@ bool reachability_cache_specialization<true, level_cache>::dynamic_fun(
             MAX_D,
             max3(
                 transp_or_zero( p - dir, layer.get_or( p - dir, 0 ) ) + 2,
-                transp_or_zero( p - point( dir.x, 0 ), layer.get_or( p - point( dir.x, 0 ), 0 ) ) + 1,
-                transp_or_zero( p - point( 0, dir.y ), layer.get_or( p - point( 0, dir.y ), 0 ) ) + 1
+                transp_or_zero( p - point_rel_ms( dir.x(), 0), layer.get_or(p - point_rel_ms(dir.x(), 0), 0)) + 1,
+                transp_or_zero( p - point_rel_ms( 0, dir.y() ), layer.get_or( p - point_rel_ms( 0, dir.y() ), 0 ) ) + 1
             ) );
 
     return layer.update( p, v );
@@ -233,26 +233,26 @@ bool reachability_cache_specialization<true, level_cache>::dynamic_fun(
 // el = min( horizontal_neighbor + 1, vertical_neighbor + 1, diagonal_neighbor + 2)
 bool reachability_cache_specialization<false, level_cache, level_cache>::dynamic_fun(
     reachability_cache_layer &layer,
-    const point &p, const point &dir,
+    const point_bub_ms_ib&p, const point_rel_ms&dir,
     const level_cache &this_lc,
     const level_cache &floor_lc )
 {
     using Layer = reachability_cache_layer;
 
-    if( !floor_lc.floor_cache[p.x][p.y] && transp( this_lc, p ) ) {
+    if( !floor_lc.floor_cache[p] && transp( this_lc, p ) ) {
         return layer.update( p, 0 );
     }
 
-    const auto val_if_transp = [&]( const point & p, int prev_v ) {
-        return prev_v >= MAX_D || !transp( this_lc, p ) ? MAX_D : prev_v;
+    const auto val_if_transp = [&]( const point_bub_ms& p, int prev_v ) {
+        return prev_v >= MAX_D || !transp( this_lc, point_bub_ms_ib::make_unchecked(p) ) ? MAX_D : prev_v;
     };
 
     const Layer::ElType v =
         min4(
             MAX_D,
             val_if_transp( p - dir, layer.get_or( p - dir, MAX_D ) ) + 2,
-            val_if_transp( p - point( dir.x, 0 ), layer.get_or( p - point( dir.x, 0 ), MAX_D ) ) + 1,
-            val_if_transp( p - point( 0, dir.y ), layer.get_or( p - point( 0, dir.y ), MAX_D ) ) + 1
+            val_if_transp( p - point_rel_ms( dir.x(), 0), layer.get_or(p - point_rel_ms(dir.x(), 0), MAX_D)) + 1,
+            val_if_transp( p - point_rel_ms( 0, dir.y() ), layer.get_or( p - point_rel_ms( 0, dir.y() ), MAX_D ) ) + 1
         );
 
     return layer.update( p, v );

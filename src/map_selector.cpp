@@ -15,11 +15,16 @@ class game;
 // NOLINTNEXTLINE(cata-static-declarations)
 extern std::unique_ptr<game> g;
 
-map_selector::map_selector( const tripoint &pos, int radius, bool accessible )
+map_selector::map_selector( const tripoint_bub_ms_ib &pos, int radius, bool accessible )
 {
-    for( const tripoint &e : closest_points_first( pos, radius ) ) {
-        if( !accessible || get_map().clear_path( pos, e, radius, 1, 100 ) ) {
+    map& here = get_map();
+    for( const tripoint_bub_ms &e : closest_points_first( pos, radius ) ) {
+        if( !accessible ) {
             data.emplace_back( e );
+        }
+        if (const std::optional< tripoint_bub_ms_ib> ib = here.make_inbounds(e);
+            ib&& here.clear_path(pos, *ib, radius, 1, 100)) {
+            data.emplace_back(e);
         }
     }
 }
@@ -60,11 +65,4 @@ std::optional<tripoint> random_point( const tripoint_range<tripoint> &range,
         return {};
     }
     return random_entry( suitable );
-}
-
-map_cursor::map_cursor( const tripoint &pos ) : pos_( g ? get_map().getabs( pos ) : pos ) { }
-
-tripoint map_cursor::pos() const
-{
-    return g ? get_map().getlocal( pos_ ) : pos_;
 }

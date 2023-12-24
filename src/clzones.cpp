@@ -852,16 +852,16 @@ std::unordered_set<tripoint_abs_ms> zone_manager::get_point_set( const zone_type
     return type_iter->second;
 }
 
-std::unordered_set<tripoint> zone_manager::get_point_set_loot( const tripoint_abs_ms &where,
+std::unordered_set<tripoint_abs_ms> zone_manager::get_point_set_loot( const tripoint_abs_ms &where,
         int radius, const faction_id &fac ) const
 {
     return get_point_set_loot( where, radius, false, fac );
 }
 
-std::unordered_set<tripoint> zone_manager::get_point_set_loot( const tripoint_abs_ms &where,
+std::unordered_set<tripoint_abs_ms> zone_manager::get_point_set_loot( const tripoint_abs_ms &where,
         int radius, bool npc_search, const faction_id &fac ) const
 {
-    std::unordered_set<tripoint> res;
+    std::unordered_set<tripoint_abs_ms> res;
     map &here = get_map();
     for( const std::pair<std::string, std::unordered_set<tripoint_abs_ms>> cache : area_cache ) {
         zone_type_id type = zone_data::unhash_type( cache.first );
@@ -869,7 +869,7 @@ std::unordered_set<tripoint> zone_manager::get_point_set_loot( const tripoint_ab
         if( fac == z_fac && type.str().substr( 0, 4 ) == "LOOT" ) {
             for( tripoint_abs_ms point : cache.second ) {
                 if( square_dist( where, point ) <= radius ) {
-                    res.emplace( here.getlocal( point ) );
+                    res.emplace( point );
                 }
             }
         }
@@ -880,7 +880,7 @@ std::unordered_set<tripoint> zone_manager::get_point_set_loot( const tripoint_ab
         if( fac == z_fac && type.str().substr( 0, 4 ) == "LOOT" ) {
             for( tripoint_abs_ms point : cache.second ) {
                 if( square_dist( where, point ) <= radius ) {
-                    res.emplace( here.getlocal( point ) );
+                    res.emplace( point );
                 }
             }
         }
@@ -891,7 +891,7 @@ std::unordered_set<tripoint> zone_manager::get_point_set_loot( const tripoint_ab
             zone_type_id type = zone_data::unhash_type( cache.first );
             if( type == zone_type_NO_NPC_PICKUP ) {
                 for( tripoint_abs_ms point : cache.second ) {
-                    res.erase( here.getlocal( point ) );
+                    res.erase( point );
                 }
             }
         }

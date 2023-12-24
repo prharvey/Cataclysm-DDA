@@ -26,8 +26,8 @@ struct reachability_cache_specialization {};
 template<>
 struct reachability_cache_specialization<true, level_cache> {
 
-    static bool dynamic_fun( reachability_cache_layer &layer, const point &p,
-                             const point &dir, const level_cache &this_lc );
+    static bool dynamic_fun( reachability_cache_layer &layer, const point_bub_ms_ib&p,
+                             const point_rel_ms&dir, const level_cache &this_lc );
 
     // returns "false" if there is no LOS, "true" is "maybe there is LOS"
     static bool test( int d, int cache_v );
@@ -39,8 +39,8 @@ struct reachability_cache_specialization<true, level_cache> {
 // specialization for vertical cache
 template<>
 struct reachability_cache_specialization<false, level_cache, level_cache> {
-    static bool dynamic_fun( reachability_cache_layer &layer, const point &p,
-                             const point &dir, const level_cache &this_lc, const level_cache &floor_lc );
+    static bool dynamic_fun( reachability_cache_layer &layer, const point_bub_ms_ib&p,
+                             const point_rel_ms&dir, const level_cache &this_lc, const level_cache &floor_lc );
 
     // returns "false" if there is no LOS, "true" is "maybe there is LOS"
     static bool test( int d, int cache_v );
@@ -59,12 +59,12 @@ class reachability_cache_layer
         // all checks for distance that exceeds MAX_D will return "false"
         static constexpr int MAX_D = std::numeric_limits<ElType>::max() - 3;
     private:
-        cata::mdarray<ElType, point_bub_ms> cache;
+        cata::mdarray<ElType, point_bub_ms_ib> cache;
 
-        bool update( const point &p, ElType value );
-        ElType &operator[]( const point &p );
-        const ElType &operator[]( const point &p ) const;
-        ElType get_or( const point &p, ElType def ) const;
+        bool update( const point_bub_ms_ib&p, ElType value );
+        ElType &operator[]( const point_bub_ms_ib&p );
+        const ElType &operator[]( const point_bub_ms_ib&p ) const;
+        ElType get_or( const point_bub_ms&p, ElType def ) const;
 
         template<bool Horizontal, typename ... Params>
         friend class reachability_cache;
@@ -122,8 +122,8 @@ class reachability_cache
         }
 
         void invalidate();
-        void invalidate( const point &p );
-        int get_value( Q q, const point &p ) const;
+        void invalidate( const point_bub_ms_ib&p );
+        int get_value( Q q, const point_bub_ms_ib&p ) const;
 
         /**
          * For "horizontal" cache, param is a current level_cache.
@@ -134,7 +134,7 @@ class reachability_cache
          *    if second param is the same as "current" level cache, "down" direction is calculated,
          *    if second param points to the level cache above current, "upward" direction is calculated.
          */
-        bool has_potential_los( const point &from, const point &to, const Params &... params );
+        bool has_potential_los( const point_bub_ms_ib&from, const point_bub_ms_ib&to, const Params &... params );
 };
 
 class reachability_cache_horizontal: public reachability_cache<true, level_cache> {};

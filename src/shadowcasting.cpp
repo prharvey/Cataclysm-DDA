@@ -509,7 +509,7 @@ void cast_zlight(
     const array_of_grids_of<T> &output_caches,
     const array_of_grids_of<const T> &input_arrays,
     const array_of_grids_of<const bool> &floor_caches,
-    const tripoint &origin, const int offset_distance, const T numerator, vertical_direction dir )
+    const tripoint_bub_ms_ib &origin, const int offset_distance, const T numerator, vertical_direction dir )
 {
     if( dir == vertical_direction::DOWN || dir == vertical_direction::BOTH ) {
         // Down lateral

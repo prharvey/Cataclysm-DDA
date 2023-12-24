@@ -228,19 +228,20 @@ void monmove()
     avatar &u = get_avatar();
 
     for( monster &critter : g->all_monsters() ) {
+        const tripoint_bub_ms pos = critter.pos_bub();
         // Critters in impassable tiles get pushed away, unless it's not impassable for them
-        if( !critter.is_dead() && m.impassable( critter.pos() ) && !critter.can_move_to( critter.pos() ) ) {
+        if (const std::optional<tripoint_bub_ms_ib> ib = m.make_inbounds(pos);
+            !ib || (!critter.is_dead() && m.impassable( *ib ) && !critter.can_move_to( ib->raw() )) ) {
             dbg( D_ERROR ) << "game:monmove: " << critter.name()
                            << " can't move to its location!  (" << critter.posx()
-                           << ":" << critter.posy() << ":" << critter.posz() << "), "
-                           << m.tername( critter.pos() );
-            add_msg_debug( debugmode::DF_MONSTER, "%s can't move to its location!  (%d,%d,%d), %s",
+                           << ":" << critter.posy() << ":" << critter.posz() << ")";
+            add_msg_debug( debugmode::DF_MONSTER, "%s can't move to its location!  (%d,%d,%d)",
                            critter.name(),
-                           critter.posx(), critter.posy(), critter.posz(), m.tername( critter.pos() ) );
+                           critter.posx(), critter.posy(), critter.posz());
             bool okay = false;
-            for( const tripoint &dest : m.points_in_radius( critter.pos(), 3 ) ) {
-                if( critter.can_move_to( dest ) && g->is_empty( dest ) ) {
-                    critter.setpos( dest );
+            for( const tripoint_bub_ms_ib &dest : m.points_in_radius( critter.pos_bub(), 3 ) ) {
+                if( critter.can_move_to( dest.raw() ) && g->is_empty( dest ) ) {
+                    critter.setpos( dest.raw() );
                     okay = true;
                     break;
                 }
@@ -437,7 +438,7 @@ bool do_turn()
     map &m = get_map();
     // If controlling a vehicle that is owned by someone else
     if( u.in_vehicle && u.controlling_vehicle ) {
-        vehicle *veh = veh_pointer_or_null( m.veh_at( u.pos() ) );
+        vehicle *veh = veh_pointer_or_null( m.veh_at( u.pos_bub() ) );
         if( veh && !veh->handle_potential_theft( u, true ) ) {
             veh->handle_potential_theft( u, false, false );
         }
@@ -581,7 +582,7 @@ bool do_turn()
         // or the option has been deactivated,
         // might also happen when someone dives from a moving car.
         // or when using the handbrake.
-        vehicle *veh = veh_pointer_or_null( m.veh_at( u.pos() ) );
+        vehicle *veh = veh_pointer_or_null( m.veh_at( u.pos_bub() ) );
         g->calc_driving_offset( veh );
     }
 
@@ -614,13 +615,13 @@ bool do_turn()
         overmap_npc_move();
     }
     if( calendar::once_every( 10_seconds ) ) {
-        for( const tripoint &elem : m.get_furn_field_locations() ) {
+        for( const tripoint_bub_ms_ib &elem : m.get_furn_field_locations() ) {
             const furn_t &furn = *m.furn( elem );
             for( const emit_id &e : furn.emissions ) {
                 m.emit_field( elem, e );
             }
         }
-        for( const tripoint &elem : m.get_ter_field_locations() ) {
+        for( const tripoint_bub_ms_ib&elem : m.get_ter_field_locations() ) {
             const ter_t &ter = *m.ter( elem );
             for( const emit_id &e : ter.emissions ) {
                 m.emit_field( elem, e );

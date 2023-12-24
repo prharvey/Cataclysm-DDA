@@ -5084,7 +5084,7 @@ template Character *game::critter_by_id<Character>( const character_id & );
 template npc *game::critter_by_id<npc>( const character_id & );
 template Creature *game::critter_by_id<Creature>( const character_id & );
 
-static bool can_place_monster( const monster &mon, const tripoint &p )
+static bool can_place_monster( const monster &mon, const tripoint_bub_ms_ib &p )
 {
     creature_tracker &creatures = get_creature_tracker();
     if( const monster *const critter = creatures.creature_at<monster>( p ) ) {
@@ -5098,10 +5098,10 @@ static bool can_place_monster( const monster &mon, const tripoint &p )
     if( creatures.creature_at<Character>( p ) ) {
         return false;
     }
-    return mon.will_move_to( p ) && mon.know_danger_at( p );
+    return mon.will_move_to( p.raw() ) && mon.know_danger_at( p.raw() );
 }
 
-static bool can_place_npc( const tripoint &p )
+static bool can_place_npc( const tripoint_bub_ms_ib&p )
 {
     creature_tracker &creatures = get_creature_tracker();
     if( const monster *const critter = creatures.creature_at<monster>( p ) ) {
@@ -5116,25 +5116,25 @@ static bool can_place_npc( const tripoint &p )
     return !g->is_dangerous_tile( p );
 }
 
-static std::optional<tripoint> choose_where_to_place_monster( const monster &mon,
-        const tripoint_range<tripoint> &range )
+static std::optional<tripoint_bub_ms_ib> choose_where_to_place_monster( const monster &mon,
+        const tripoint_range<tripoint_bub_ms_ib> &range )
 {
-    return random_point( range, [&]( const tripoint & p ) {
+    return random_point( range, [&]( const tripoint_bub_ms_ib& p ) {
         return can_place_monster( mon, p );
     } );
 }
 
-monster *game::place_critter_at( const mtype_id &id, const tripoint &p )
+monster *game::place_critter_at( const mtype_id &id, const tripoint_bub_ms_ib&p )
 {
     return place_critter_around( id, p, 0 );
 }
 
-monster *game::place_critter_at( const shared_ptr_fast<monster> &mon, const tripoint &p )
+monster *game::place_critter_at( const shared_ptr_fast<monster> &mon, const tripoint_bub_ms_ib&p )
 {
     return place_critter_around( mon, p, 0 );
 }
 
-monster *game::place_critter_around( const mtype_id &id, const tripoint &center, const int radius )
+monster *game::place_critter_around( const mtype_id &id, const tripoint_bub_ms_ib&center, const int radius )
 {
     // TODO: change this into an assert, it must never happen.
     if( id.is_null() ) {
@@ -5146,11 +5146,11 @@ monster *game::place_critter_around( const mtype_id &id, const tripoint &center,
 }
 
 monster *game::place_critter_around( const shared_ptr_fast<monster> &mon,
-                                     const tripoint &center,
+                                     const tripoint_bub_ms_ib &center,
                                      const int radius,
                                      bool forced )
 {
-    std::optional<tripoint> where;
+    std::optional<tripoint_bub_ms_ib> where;
     if( forced || can_place_monster( *mon, center ) ) {
         where = center;
     }
@@ -5164,11 +5164,11 @@ monster *game::place_critter_around( const shared_ptr_fast<monster> &mon,
     if( !where ) {
         return nullptr;
     }
-    mon->spawn( *where );
+    mon->spawn( where->raw() );
     return critter_tracker->add( mon ) ? mon.get() : nullptr;
 }
 
-monster *game::place_critter_within( const mtype_id &id, const tripoint_range<tripoint> &range )
+monster *game::place_critter_within( const mtype_id &id, const tripoint_range<tripoint_bub_ms_ib> &range )
 {
     // TODO: change this into an assert, it must never happen.
     if( id.is_null() ) {
@@ -5178,13 +5178,13 @@ monster *game::place_critter_within( const mtype_id &id, const tripoint_range<tr
 }
 
 monster *game::place_critter_within( const shared_ptr_fast<monster> &mon,
-                                     const tripoint_range<tripoint> &range )
+                                     const tripoint_range<tripoint_bub_ms_ib> &range )
 {
-    const std::optional<tripoint> where = choose_where_to_place_monster( *mon, range );
+    const std::optional<tripoint_bub_ms_ib> where = choose_where_to_place_monster( *mon, range );
     if( !where ) {
         return nullptr;
     }
-    mon->spawn( *where );
+    mon->spawn( where-raw() );
     return critter_tracker->add( mon ) ? mon.get() : nullptr;
 }
 
@@ -5210,42 +5210,44 @@ void game::clear_zombies()
     critter_tracker->clear();
 }
 
-bool game::find_nearby_spawn_point( const tripoint &target, const mtype_id &mt, int min_radius,
-                                    int max_radius, tripoint &point, bool outdoor_only, bool indoor_only, bool open_air_allowed )
+bool game::find_nearby_spawn_point( const tripoint_bub_ms_ib&target, const mtype_id &mt, int min_radius,
+                                    int max_radius, tripoint_bub_ms_ib& point, bool outdoor_only, bool indoor_only, bool open_air_allowed )
 {
-    tripoint target_point;
+    const map& here = get_map();
     //find a legal outdoor place to spawn based on the specified radius,
     //we just try a bunch of random points and use the first one that works, it none do then no spawn
     for( int attempts = 0; attempts < 75; attempts++ ) {
-        target_point = target + tripoint( rng( -max_radius, max_radius ),
+        const tripoint_bub_ms target_point = target + tripoint( rng( -max_radius, max_radius ),
                                           rng( -max_radius, max_radius ), 0 );
-        if( can_place_monster( monster( mt->id ), target_point ) &&
-            ( open_air_allowed || get_map().has_floor_or_water( target_point ) ) &&
-            ( !outdoor_only || get_map().is_outside( target_point ) ) &&
-            ( !indoor_only || !get_map().is_outside( target_point ) ) &&
-            rl_dist( target_point, target ) >= min_radius ) {
-            point = target_point;
+        if( std::optional<tripoint_bub_ms_ib> ib = here.make_inbounds(target_point);
+            ib && can_place_monster( monster( mt->id ), *ib) &&
+            ( open_air_allowed || here.has_floor_or_water(*ib) ) &&
+            ( !outdoor_only || here.is_outside(*ib) ) &&
+            ( !indoor_only || !here.is_outside(*ib) ) &&
+            rl_dist( *ib, target ) >= min_radius ) {
+            point = *ib;
             return true;
         }
     }
     return false;
 }
 
-bool game::find_nearby_spawn_point( const tripoint &target, int min_radius,
-                                    int max_radius, tripoint &point, bool outdoor_only, bool indoor_only, bool open_air_allowed )
+bool game::find_nearby_spawn_point( const tripoint_bub_ms_ib&target, int min_radius,
+                                    int max_radius, tripoint_bub_ms_ib&point, bool outdoor_only, bool indoor_only, bool open_air_allowed )
 {
-    tripoint target_point;
+    const map& here = get_map();
     //find a legal outdoor place to spawn based on the specified radius,
     //we just try a bunch of random points and use the first one that works, it none do then no spawn
     for( int attempts = 0; attempts < 75; attempts++ ) {
-        target_point = target + tripoint( rng( -max_radius, max_radius ),
+        const tripoint_bub_ms target_point = target + tripoint( rng( -max_radius, max_radius ),
                                           rng( -max_radius, max_radius ), 0 );
-        if( can_place_npc( target_point ) &&
-            ( open_air_allowed || get_map().has_floor_or_water( target_point ) ) &&
-            ( !outdoor_only || get_map().is_outside( target_point ) ) &&
-            ( !indoor_only || !get_map().is_outside( target_point ) ) &&
-            rl_dist( target_point, target ) >= min_radius ) {
-            point = target_point;
+        if(std::optional<tripoint_bub_ms_ib> ib = here.make_inbounds(target_point);
+            ib && can_place_npc( *ib ) &&
+            ( open_air_allowed || here.has_floor_or_water(*ib) ) &&
+            ( !outdoor_only || here.is_outside(*ib) ) &&
+            ( !indoor_only || !here.is_outside(*ib) ) &&
+            rl_dist(*ib, target ) >= min_radius ) {
+            point = *ib;
             return true;
         }
     }
@@ -5258,10 +5260,11 @@ bool game::find_nearby_spawn_point( const tripoint &target, int min_radius,
  * a monster already in the target square.
  * @return Whether or not a hallucination was successfully spawned.
  */
-bool game::spawn_hallucination( const tripoint &p )
+bool game::spawn_hallucination( const tripoint_bub_ms_ib &p )
 {
+    const map& here = get_map();
     //Don't spawn hallucinations on open air
-    if( get_map().has_flag( ter_furn_flag::TFLAG_NO_FLOOR, p ) ) {
+    if( here.has_flag( ter_furn_flag::TFLAG_NO_FLOOR, p ) ) {
         return false;
     }
 
@@ -5269,7 +5272,7 @@ bool game::spawn_hallucination( const tripoint &p )
         shared_ptr_fast<npc> tmp = make_shared_fast<npc>();
         tmp->normalize();
         tmp->randomize( NC_HALLU );
-        tmp->spawn_at_precise( tripoint_abs_ms( get_map().getabs( p ) ) );
+        tmp->spawn_at_precise( here.abs_from_bub( p ) );
         if( !get_creature_tracker().creature_at( p, true ) ) {
             overmap_buffer.insert_npc( tmp );
             load_npcs();
@@ -5298,7 +5301,7 @@ bool game::spawn_hallucination( const tripoint &p )
  * a monster already in the target square.
  * @return Whether or not a hallucination was successfully spawned.
  */
-bool game::spawn_hallucination( const tripoint &p, const mtype_id &mt,
+bool game::spawn_hallucination( const tripoint_bub_ms_ib &p, const mtype_id &mt,
                                 std::optional<time_duration> lifespan )
 {
     //Don't spawn hallucinations on open air
@@ -5308,7 +5311,7 @@ bool game::spawn_hallucination( const tripoint &p, const mtype_id &mt,
 
     const shared_ptr_fast<monster> phantasm = make_shared_fast<monster>( mt );
     phantasm->hallucination = true;
-    phantasm->spawn( p );
+    phantasm->spawn( p.raw() );
     if( lifespan.has_value() ) {
         phantasm->set_summon_time( lifespan.value() );
     }
@@ -5320,7 +5323,7 @@ bool game::spawn_hallucination( const tripoint &p, const mtype_id &mt,
     }
 }
 
-bool game::spawn_npc( const tripoint &p, const string_id<npc_template> &npc_class,
+bool game::spawn_npc( const tripoint_bub_ms_ib&p, const string_id<npc_template> &npc_class,
                       std::string &unique_id,
                       std::vector<trait_id> &traits, std::optional<time_duration> lifespan )
 {
@@ -5332,7 +5335,7 @@ bool game::spawn_npc( const tripoint &p, const string_id<npc_template> &npc_clas
     shared_ptr_fast<npc> tmp = make_shared_fast<npc>();
     tmp->normalize();
     tmp->load_npc_template( npc_class );
-    tmp->spawn_at_precise( tripoint_abs_ms( get_map().getabs( p ) ) );
+    tmp->spawn_at_precise( get_map().abs_from_bub( p ) );
     if( !get_creature_tracker().creature_at( p, true ) ) {
         overmap_buffer.insert_npc( tmp );
         for( const trait_id &new_trait : traits ) {
@@ -5422,30 +5425,25 @@ bool game::swap_critters( Creature &a, Creature &b )
     return true;
 }
 
-bool game::is_empty( const tripoint &p )
+bool game::is_empty( const tripoint_bub_ms_ib &p )
 {
     return ( m.passable( p ) || m.has_flag( ter_furn_flag::TFLAG_LIQUID, p ) ) &&
            get_creature_tracker().creature_at( p ) == nullptr;
 }
 
-bool game::is_empty( const tripoint_bub_ms &p )
-{
-    return is_empty( p.raw() );
-}
-
-bool game::is_in_sunlight( const tripoint &p )
+bool game::is_in_sunlight( const tripoint_bub_ms_ib&p )
 {
     return !is_sheltered( p ) &&
            incident_sun_irradiance( get_weather().weather_id, calendar::turn ) > irradiance::minimal;
 }
 
-bool game::is_sheltered( const tripoint &p )
+bool game::is_sheltered( const tripoint_bub_ms_ib&p )
 {
     const optional_vpart_position vp = m.veh_at( p );
     bool is_inside = vp && vp->is_inside();
 
     return !m.is_outside( p ) ||
-           p.z < 0 ||
+           p.z() < 0 ||
            is_inside;
 }
 
