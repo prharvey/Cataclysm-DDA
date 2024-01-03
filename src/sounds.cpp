@@ -452,9 +452,44 @@ static int get_signal_for_hordes( const centroid &centr )
     return 0;
 }
 
+static void add_sound_tiles(const tripoint& source, int volume, std::unordered_set<tripoint>& tiles) {
+    const map& here = get_map();
+    for (tripoint p : here.points_in_radius(source, volume, volume)) {
+        if (sound_distance(source, p) <= volume) {
+            tiles.insert(p);
+        }
+    }
+}
+
 void sounds::process_sounds()
 {
+    std::unordered_set<tripoint> original_tiles;
+    for (const auto& [source, event] : recent_sounds) {
+        add_sound_tiles(source, event.volume, original_tiles);
+    }
     std::vector<centroid> sound_clusters = cluster_sounds( recent_sounds );
+    std::unordered_set<tripoint> clustered_tiles;
+    for (const centroid& cluster : sound_clusters) {
+        const tripoint source = tripoint(cluster.x, cluster.y, cluster.z);
+        add_sound_tiles(source, cluster.volume, clustered_tiles);
+    }
+    add_msg("Saw %d sound events, %d tiles originally hit, %d tiles hit after clustering.", recent_sounds.size(), original_tiles.size(), clustered_tiles.size());
+    int sound_is_good = 0;
+    int sound_is_fake = 0;
+    int sound_is_missing = 0;
+    for (tripoint p : original_tiles) {
+        if (clustered_tiles.count(p)) {
+            ++sound_is_good;
+        }  else {
+            ++sound_is_missing;
+        }
+    }
+    for (tripoint p : clustered_tiles) {
+        if (!original_tiles.count(p)) {
+            ++sound_is_fake;
+        }
+    }
+    add_msg("%d were good, %d were fake, %d were missing.", sound_is_good, sound_is_fake, sound_is_missing);
     const int weather_vol = get_weather().weather_id->sound_attn;
     for( const centroid &this_centroid : sound_clusters ) {
         // Since monsters don't go deaf ATM we can just use the weather modified volume
