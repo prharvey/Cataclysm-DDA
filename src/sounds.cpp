@@ -482,22 +482,14 @@ void sounds::process_sounds()
     add_msg( "Saw %d sound events, %d tiles originally hit, %d tiles hit after clustering.",
              recent_sounds.size(), original_tiles.size(), clustered_tiles.size() );
     int sound_is_good = 0;
-    int sound_is_fake = 0;
-    int sound_is_missing = 0;
     for( tripoint p : original_tiles ) {
         if( clustered_tiles.count( p ) ) {
             ++sound_is_good;
-        }  else {
-            ++sound_is_missing;
         }
     }
-    for( tripoint p : clustered_tiles ) {
-        if( !original_tiles.count( p ) ) {
-            ++sound_is_fake;
-        }
-    }
-    add_msg( "%d were good, %d were fake, %d were missing.", sound_is_good, sound_is_fake,
-             sound_is_missing );
+    add_msg( "%d were good, %d were fake, %d were missing.", sound_is_good,
+             clustered_tiles.size() - sound_is_good,
+             original_tiles.size() - sound_is_good );
     const int weather_vol = get_weather().weather_id->sound_attn;
     for( const centroid &this_centroid : sound_clusters ) {
         // Since monsters don't go deaf ATM we can just use the weather modified volume
